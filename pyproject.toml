@@ -34,6 +34,7 @@ openbb = [
 
 [project.scripts]
 horizon = "src.main:main"
+horizon-blog = "src.blog.runner:main"
 horizon-mcp = "src.mcp.server:main"
 horizon-wizard = "src.setup.wizard:main"
 horizon-webhook = "src.services.webhook_cli:main"

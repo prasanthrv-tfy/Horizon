@@ -4,12 +4,12 @@ import asyncio
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict
+from pathlib import Path
+from typing import Dict, List
 from urllib.parse import urlparse
 import httpx
 from rich.console import Console
 
-from .ai.blog_writer import BlogWriter
 from .models import Config, ContentItem
 from .storage.manager import StorageManager
 from .services.email import EmailManager
@@ -28,10 +28,6 @@ from .ai.summarizer import DailySummarizer
 from .ai.enricher import ContentEnricher
 from .ai.tokens import get_usage_snapshot
 
-
-def _debug_dump(items: List[ContentItem], filename: str) -> None:
-    with open(f"tmp/{filename}.json", "w") as f:
-        json.dump([item.model_dump() for item in items], f, indent=2, default=str)
 
 
 class HorizonOrchestrator:
@@ -85,8 +81,6 @@ class HorizonOrchestrator:
                 self.console.print("[yellow]No new content found. Exiting.[/yellow]")
                 return
 
-            _debug_dump(all_items, "debug_all_items")
-
             # 3. Merge cross-source duplicates (same URL from different sources)
             merged_items = self.merge_cross_source_duplicates(all_items)
             if len(merged_items) < len(all_items):
@@ -94,13 +88,10 @@ class HorizonOrchestrator:
                     f"🔗 Merged {len(all_items) - len(merged_items)} cross-source duplicates "
                     f"→ {len(merged_items)} unique items\n"
                 )
-            _debug_dump(merged_items, "debug_merged_items")
 
             # 4. Analyze with AI
             analyzed_items = await self._analyze_content(merged_items)
             self.console.print(f"🤖 Analyzed {len(analyzed_items)} items with AI\n")
-
-            _debug_dump(analyzed_items, "analyzed_items")
 
             # 5. Filter by score threshold
             threshold = self.config.filtering.ai_score_threshold
@@ -109,8 +100,6 @@ class HorizonOrchestrator:
                 if item.ai_score and item.ai_score >= threshold
             ]
             important_items.sort(key=lambda x: x.ai_score or 0, reverse=True)
-
-            _debug_dump(important_items, "important_items")
 
             self.console.print(
                 f"⭐️ {len(important_items)} items scored ≥ {threshold}\n"
@@ -124,7 +113,6 @@ class HorizonOrchestrator:
                     f"→ {len(deduped_items)} unique items\n"
                 )
             important_items = deduped_items
-            _debug_dump(important_items, "deduped_items")
 
             # 5.6 Optional second-stage Twitter reply expansion + targeted re-analysis
             await self._expand_twitter_discussion(important_items)
@@ -138,26 +126,11 @@ class HorizonOrchestrator:
                 self.console.print(f"      • {source_key}: {count}")
             self.console.print("")
 
-            # 6. AI relevance ranking + top-N selection
-            max_posts = self.config.filtering.max_blog_posts
-            if important_items and len(important_items) > max_posts:
-                important_items = await self._rank_by_relevance(important_items)
-                important_items = important_items[:max_posts]
-                self.console.print(
-                    f"🏆 Selected top {max_posts} items by relevance for blog generation\n"
-                )
-            elif important_items:
-                important_items = await self._rank_by_relevance(important_items)
-                self.console.print(
-                    f"🏆 Ranked {len(important_items)} items by relevance\n"
-                )
-
-            # 7. Generate individual blog posts
-            await self._generate_blog_posts(important_items)
+            # Save important items for blog generation (run `uv run horizon-blog` separately)
+            self._save_important_items(important_items)
 
             # 6. Search related stories + enrich with background knowledge (2nd AI pass)
             await self._enrich_important_items(important_items)
-            _debug_dump(important_items, "enriched_items")
 
             # 7. Generate and save daily summaries for each configured language
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -171,8 +144,6 @@ class HorizonOrchestrator:
 
                 # Copy to docs/ for GitHub Pages
                 try:
-                    from pathlib import Path
-
                     post_filename = f"{today}-summary-{lang}.md"
                     posts_dir = Path("docs/_posts")
                     posts_dir.mkdir(parents=True, exist_ok=True)
@@ -565,128 +536,15 @@ class HorizonOrchestrator:
         await enricher.enrich_batch(items)
         self.console.print(f"   Enriched {len(items)} items\n")
 
-    async def _generate_blog_posts(self, items: List[ContentItem]) -> None:
-        """Generate individual blog posts for each important item.
-
-        Args:
-            items: Important items above score threshold
-        """
-        if not items:
-            self.console.print("[yellow]No items above threshold — skipping blog generation.[/yellow]")
-            return
-
-        from pathlib import Path
-
-        self.console.print(f"📝 Generating blog posts for {len(items)} items...")
-        ai_client = create_ai_client(self.config.ai)
-        writer = BlogWriter(ai_client)
-        languages = list(self.config.ai.languages)
-
-        posts_by_lang = await writer.generate_blog_posts(items, languages)
-
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-
-        for lang, posts in posts_by_lang.items():
-            for post in posts:
-                # Save raw archive
-                archive_dir = Path("data/blog-posts")
-                archive_dir.mkdir(parents=True, exist_ok=True)
-                archive_path = archive_dir / f"{today}-{post.slug}-{lang}.md"
-                archive_path.write_text(post.markdown, encoding="utf-8")
-
-                # Save Jekyll-ready version
-                posts_dir = Path("docs/_posts")
-                posts_dir.mkdir(parents=True, exist_ok=True)
-                jekyll_path = posts_dir / f"{today}-{post.slug}-{lang}.md"
-
-                front_matter = (
-                    "---\n"
-                    "layout: post\n"
-                    "type: blog\n"
-                    f"title: \"{post.title.replace(chr(34), chr(39))}\"\n"
-                    f"date: {today}\n"
-                    f"lang: {lang}\n"
-                    f"score: {post.score}\n"
-                    f"original_url: \"{post.url}\"\n"
-                    f"tags: [{', '.join(post.tags)}]\n"
-                    "---\n\n"
-                )
-
-                # Strip leading H1 to avoid duplication with Jekyll title
-                content = post.markdown
-                first_line = content.strip().split("\n")[0]
-                if first_line.startswith("# "):
-                    parts = content.split("\n", 1)
-                    if len(parts) > 1:
-                        content = parts[1].strip()
-
-                jekyll_path.write_text(front_matter + content, encoding="utf-8")
-
-            self.console.print(
-                f"   {lang.upper()}: {len(posts)} blog posts saved to data/blog-posts/ and docs/_posts/"
-            )
-
-        total = sum(len(p) for p in posts_by_lang.values())
-        self.console.print(f"   Total: {total} blog posts generated\n")
-
-    async def _rank_by_relevance(self, items: List[ContentItem]) -> List[ContentItem]:
-        """Re-rank items by content relevance using AI (independent of score).
-
-        Args:
-            items: Items to rank
-
-        Returns:
-            List[ContentItem]: Items reordered by relevance (most relevant first)
-        """
-        from .ai.prompts import RELEVANCE_RANKING_SYSTEM, RELEVANCE_RANKING_USER
-        from .ai.utils import parse_json_response
-
-        if len(items) <= 1:
-            return items
-
-        self.console.print("🔄 Ranking items by relevance...")
-        ai_client = create_ai_client(self.config.ai)
-
-        # Build item descriptions for the AI
-        item_texts = []
-        for i, item in enumerate(items):
-            content_preview = ""
-            if item.content:
-                content_preview = item.content.split("--- Top Comments ---")[0].strip()[:500]
-            item_texts.append(
-                f"ID: {item.id}\n"
-                f"Title: {item.title}\n"
-                f"Summary: {item.ai_summary or item.title}\n"
-                f"Tags: {', '.join(item.ai_tags) if item.ai_tags else 'none'}\n"
-                f"Content: {content_preview}\n"
-            )
-
-        items_text = "\n---\n".join(item_texts)
-        user_prompt = RELEVANCE_RANKING_USER.format(
-            count=len(items),
-            items_text=items_text,
+    def _save_important_items(self, items: List[ContentItem]) -> None:
+        """Save important items to disk for consumption by horizon-blog."""
+        output_path = Path("data/pipeline-output/important_items.json")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps([item.model_dump() for item in items], indent=2, default=str),
+            encoding="utf-8",
         )
-
-        try:
-            response = await ai_client.complete(
-                system=RELEVANCE_RANKING_SYSTEM,
-                user=user_prompt,
-                temperature=0.3,
-            )
-            result = parse_json_response(response)
-            if result and "ranked_ids" in result:
-                id_to_item = {item.id: item for item in items}
-                ranked = []
-                for item_id in result["ranked_ids"]:
-                    if item_id in id_to_item:
-                        ranked.append(id_to_item.pop(item_id))
-                # Append any items not returned by AI (safety net)
-                ranked.extend(id_to_item.values())
-                return ranked
-        except Exception as e:
-            self.console.print(f"[yellow]⚠️  Relevance ranking failed ({e}), using original order[/yellow]")
-
-        return items
+        self.console.print(f"💾 Saved {len(items)} items to {output_path}\n")
 
     async def _analyze_content(self, items: List[ContentItem]) -> List[ContentItem]:
         """Analyze content items with AI.

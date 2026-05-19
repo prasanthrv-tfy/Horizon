@@ -61,3 +61,6 @@ todo.txt
 .ruff_cache
 .pytest_cache
 tmp/
+data/summaries
+data/pipeline-output
+data/blog-posts

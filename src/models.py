@@ -313,9 +313,7 @@ class FilteringConfig(BaseModel):
     """Content filtering configuration."""
 
     ai_score_threshold: float = 7.0
-    max_blog_posts: int = 4
     time_window_hours: int = 24
-    topics: List[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):
@@ -327,3 +325,8 @@ class Config(BaseModel):
     filtering: FilteringConfig
     email: Optional[EmailConfig] = None
     webhook: Optional[WebhookConfig] = None
+    blog: Optional["BlogConfig"] = None
+
+
+from .blog.models import BlogConfig  # noqa: E402 — resolves forward reference
+Config.model_rebuild()

@@ -1,41 +1,21 @@
-"""Blog post generation from high-scoring content items.
-
-For each item above the score threshold, generates a standalone Markdown blog post
-with web search context and concept extraction.
-"""
+"""Blog post generation from high-scoring content items."""
 
 import os
 import re
 import sys
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn
 from ddgs import DDGS
 
-from .client import AIClient
-from .prompts import (
-    CONCEPT_EXTRACTION_SYSTEM, CONCEPT_EXTRACTION_USER,
-    BLOG_POST_SYSTEM, BLOG_POST_USER,
-)
-from .utils import parse_json_response
+from ..ai.client import AIClient
+from ..ai.prompts import CONCEPT_EXTRACTION_SYSTEM, CONCEPT_EXTRACTION_USER
+from ..ai.utils import parse_json_response
 from ..models import ContentItem
-
-
-@dataclass
-class BlogPost:
-    """A generated blog post for a single content item."""
-
-    item_id: str
-    title: str
-    slug: str
-    markdown: str
-    language: str
-    score: float
-    url: str
-    tags: List[str] = field(default_factory=list)
-    published_at: str = ""
+from .models import BlogPost
+from .prompts import BLOG_POST_SYSTEM, BLOG_POST_USER
 
 
 LANGUAGE_NAMES = {
@@ -55,15 +35,7 @@ class BlogWriter:
         items: List[ContentItem],
         languages: List[str],
     ) -> Dict[str, List[BlogPost]]:
-        """Generate blog posts for each item in each language.
-
-        Args:
-            items: Content items that passed the score threshold
-            languages: List of language codes (e.g. ["en", "zh"])
-
-        Returns:
-            Dict mapping language code to list of BlogPost objects
-        """
+        """Generate blog posts for each item in each language."""
         if not items:
             return {lang: [] for lang in languages}
 
@@ -98,14 +70,7 @@ class BlogWriter:
     async def _generate_single_post(
         self, item: ContentItem, language: str
     ) -> Optional[BlogPost]:
-        """Generate a single blog post for one item in one language.
-
-        Steps:
-        1. Extract concepts needing explanation
-        2. Web search for context
-        3. Generate blog post via AI
-        """
-        # Parse content and comments
+        """Generate a single blog post for one item in one language."""
         content_text = ""
         comments_text = ""
         if item.content:
@@ -116,10 +81,8 @@ class BlogWriter:
             else:
                 content_text = item.content[:8000]
 
-        # Step 1: Concept extraction
         queries = await self._extract_concepts(item, content_text)
 
-        # Step 2: Web search
         all_results = []
         web_sections = []
         for query in queries:
@@ -130,7 +93,6 @@ class BlogWriter:
                 web_sections.append(f"**{query}:**\n" + "\n".join(lines))
         web_context = "\n\n".join(web_sections) if web_sections else "No web search results available."
 
-        # Build engagement string
         meta = item.metadata
         engagement_items = []
         if meta.get("score"):
@@ -145,7 +107,6 @@ class BlogWriter:
             engagement_items.append(f"upvote ratio: {meta['upvote_ratio']:.0%}")
         engagement = ", ".join(engagement_items) if engagement_items else "No engagement data available."
 
-        # Build sources list
         sources_list = [str(item.url)]
         for r in all_results:
             if r.get("url"):
@@ -153,10 +114,8 @@ class BlogWriter:
         sources = "\n".join(f"- {u}" for u in sources_list)
 
         comments_section = f"\n**Community Comments:**\n{comments_text}\n" if comments_text else ""
-
         language_name = LANGUAGE_NAMES.get(language, language)
 
-        # Step 3: Generate blog post
         system_prompt = BLOG_POST_SYSTEM.format(language_name=language_name)
         user_prompt = BLOG_POST_USER.format(
             language_name=language_name,
@@ -180,7 +139,6 @@ class BlogWriter:
             json_mode=False,
         )
 
-        # Clean up markdown — strip wrapping code blocks if present
         markdown = markdown.strip()
         if markdown.startswith("```markdown"):
             markdown = markdown[len("```markdown"):].strip()
@@ -219,9 +177,7 @@ class BlogWriter:
                 temperature=0.3,
             )
             result = parse_json_response(response)
-
-            queries = result.get("queries", [])
-            return queries[:3]
+            return result.get("queries", [])[:3]
         except Exception as e:
             print(f"Error generating search queries: {e}")
             return []
