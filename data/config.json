@@ -1,16 +1,10 @@
 {
   "version": "1.0",
   "ai": {
-    "provider": "deepseek",
-    "model": "deepseek-v4-flash",
-    "base_url": "https://api.deepseek.com",
-    "api_key_env": "OPENAI_API_KEY",
-    "temperature": 0.3,
-    "max_tokens": 8192,
-    "languages": [
-      "zh",
-      "en"
-    ],
+    "provider": "openai",
+    "model": "openai-main/gpt-5.4-mini",
+    "base_url": "${TFY_BASE_URL}",
+    "api_key_env": "TFY_API_KEY",
     "analysis_concurrency": 5,
     "enrichment_concurrency": 5
   },
@@ -18,55 +12,103 @@
     "github": [
       {
         "type": "user_events",
-        "username": "karpathy",
-        "enabled": true
+        "username": "torvalds",
+        "enabled": false
       },
       {
         "type": "repo_releases",
-        "owner": "vllm-project",
-        "repo": "vllm",
-        "enabled": true
-      },
-      {
-        "type": "repo_releases",
-        "owner": "sgl-project",
-        "repo": "sglang",
-        "enabled": true
-      },
-      {
-        "type": "repo_releases",
-        "owner": "triton-lang",
-        "repo": "triton",
+        "owner": "astral-sh",
+        "repo": "uv",
         "enabled": true
       }
     ],
     "hackernews": {
-      "enabled": true,
-      "fetch_top_stories": 30,
-      "min_score": 150
+      "enabled": false,
+      "fetch_top_stories": 20,
+      "min_score": 100
     },
     "rss": [
+      {
+        "name": "WIRED AI",
+        "url": "https://www.wired.com/feed/tag/ai/latest/rss",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "Cursor News",
+        "url": "https://any-feeds.com/api/feeds/custom/cmkoaiogm0000lf04qmtirq2g/rss.xml",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "Claude News",
+        "url": "https://any-feeds.com/api/feeds/custom/cmlwl4qxj0000l104m7a093k8/rss.xml",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "OpenAI News",
+        "url": "https://openai.com/news/rss.xml",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "Google AI Blog",
+        "url": "http://feeds.feedburner.com/blogspot/gJZg",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Microsoft Research",
+        "url": "https://www.microsoft.com/en-us/research/feed",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "NVIDIA AI Blog",
+        "url": "http://feeds.feedburner.com/nvidiablog",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "BAIR (Berkeley AI Research)",
+        "url": "https://bair.berkeley.edu/blog/feed.xml",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "MIT AI News",
+        "url": "http://news.mit.edu/rss/topic/artificial-intelligence2",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "AI for Newsroom",
+        "url": "https://aifornewsroom.in/api/rss",
+        "enabled": true,
+        "category": "ai-news"
+      },
+      {
+        "name": "AWS Machine Learning Blog",
+        "url": "https://aws.amazon.com/blogs/machine-learning/feed",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "arXiv cs.LG (Machine Learning)",
+        "url": "http://arxiv.org/rss/cs.LG",
+        "enabled": false,
+        "category": "ai-research"
+      },
       {
         "name": "Simon Willison",
         "url": "https://simonwillison.net/atom/everything/",
         "enabled": true,
         "category": "ai-tools"
-      },
-      {
-        "name": "GitHub Trending - Daily",
-        "url": "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml",
-        "enabled": true,
-        "category": "github-trending"
-      },
-      {
-        "name": "LWN.net",
-        "url": "https://lwn.net/headlines/full_text?key=${LWN_KEY}",
-        "enabled": true,
-        "category": "linux-kernel"
       }
     ],
     "reddit": {
-      "enabled": true,
+      "enabled": false,
       "subreddits": [
         {
           "subreddit": "MachineLearning",
@@ -74,70 +116,24 @@
           "sort": "hot",
           "time_filter": "day",
           "fetch_limit": 15,
-          "min_score": 60
-        },
-        {
-          "subreddit": "LocalLLaMA",
-          "enabled": true,
-          "sort": "hot",
-          "time_filter": "day",
-          "fetch_limit": 15,
-          "min_score": 60
+          "min_score": 50
         }
       ],
-      "users": [],
-      "fetch_comments": 10
-    },
-    "telegram": {
-      "enabled": true,
-      "channels": [
+      "users": [
         {
-          "channel": "zaihuapd",
+          "username": "iamthatis",
           "enabled": true,
-          "fetch_limit": 20
+          "sort": "new",
+          "fetch_limit": 10
         }
-      ]
+      ],
+      "fetch_comments": 5
     }
   },
   "filtering": {
     "ai_score_threshold": 8.0,
-    "time_window_hours": 24
-  },
-  "webhook": {
-    "enabled": true,
-    "url_env": "HORIZON_WEBHOOK_URL",
-    "delivery": "summary_and_items",
-    "overview_position": "last",
-    "platform": "feishu",
-    "layout": "collapsible",
-    "fallback_layout": "markdown",
-    "languages": [
-      "zh"
-    ],
-    "request_body": {
-      "msg_type": "interactive",
-      "card": {
-        "schema": "2.0",
-        "config": {
-          "wide_screen_mode": true
-        },
-        "header": {
-          "title": {
-            "tag": "plain_text",
-            "content": "#{message_title}"
-          },
-          "template": "blue"
-        },
-        "body": {
-          "elements": [
-            {
-              "tag": "markdown",
-              "content": "#{summary}"
-            }
-          ]
-        }
-      }
-    },
-    "headers": ""
+    "max_blog_posts": 4,
+    "time_window_hours": 168,
+    "topics": ["AI", "machine learning", "large language models", "ai model releases", "open source ai tools"]
   }
 }

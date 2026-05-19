@@ -60,3 +60,4 @@ logs/*.log
 todo.txt
 .ruff_cache
 .pytest_cache
+tmp/

@@ -313,7 +313,9 @@ class FilteringConfig(BaseModel):
     """Content filtering configuration."""
 
     ai_score_threshold: float = 7.0
+    max_blog_posts: int = 4
     time_window_hours: int = 24
+    topics: List[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):
