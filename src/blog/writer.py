@@ -194,7 +194,7 @@ class BlogWriter:
             title=item.title,
             summary=item.ai_summary or item.title,
             tags=", ".join(item.ai_tags) if item.ai_tags else "",
-            content=content_text[:1000],
+            content=content_text[:2500],
         )
 
         try:
