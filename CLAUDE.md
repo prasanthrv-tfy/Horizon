@@ -78,19 +78,36 @@ Token usage is tracked in-memory by `src/ai/tokens.py` and printed after each ru
 
 `src/blog/` is a self-contained module added on top of upstream Horizon. It is intentionally isolated so upstream merges only touch ~5 lines in `src/orchestrator.py` and `src/models.py`.
 
-- **`src/blog/models.py`** — `BlogPost` dataclass and `BlogConfig` Pydantic model (`max_posts`, `topics`, `output_dir`).
-- **`src/blog/prompts.py`** — blog-specific prompts (`RELEVANCE_RANKING_*`, `BLOG_POST_*`).
-- **`src/blog/writer.py`** — `BlogWriter`: for each `ContentItem`, extracts concepts, does DuckDuckGo web searches for context, then generates a Markdown blog post via the AI client.
-- **`src/blog/runner.py`** — `horizon-blog` entry point: loads `data/pipeline-output/important_items.json`, re-ranks by AI relevance, selects top N, calls `BlogWriter`, writes output to `data/blog-posts/` and `docs/_posts/` with Jekyll front matter.
+- **`src/blog/models.py`** — `BlogPost` dataclass and `BlogConfig` Pydantic model.
+- **`src/blog/prompts.py`** — shared blog prompts (`RELEVANCE_RANKING_*` only).
+- **`src/blog/writer.py`** — `BlogWriter`: accepts a `BlogPromptProfile`, does DuckDuckGo web searches using the profile's research prompts, then generates a Markdown blog post via the AI client.
+- **`src/blog/runner.py`** — `horizon-blog` entry point: loads `data/pipeline-output/important_items.json`, re-ranks by AI relevance, selects top N, resolves profile(s) from config, calls `BlogWriter` for each, writes output to `data/blog-posts/{profile}/` and `docs/_posts/{profile}/` with Jekyll front matter.
+- **`src/blog/profiles/`** — prompt profile subpackage (see below).
+
+#### Prompt profiles
+
+Each profile is a Python file in `src/blog/profiles/` exporting a `PROFILE = BlogPromptProfile(...)`. Adding a new profile = adding one file and one import in `__init__.py`.
+
+| Profile | File | Audience |
+|---|---|---|
+| `journalist` | `profiles/journalist.py` | General tech readers; business impact framing |
+| `practitioner` | `profiles/practitioner.py` | ML/MLOps engineers; technical depth, no background padding |
+
+`BlogPromptProfile` bundles four prompts: `blog_system`, `blog_user`, `research_system`, `research_user`. The research prompts control what web search queries are generated — the journalist profile searches for concept explanations, the practitioner profile searches for papers, benchmarks, and implementations.
 
 Blog config is optional in `data/config.json`:
 ```json
 "blog": {
   "max_posts": 4,
   "topics": [],
-  "output_dir": "data/blog-posts"
+  "output_dir": "data/blog-posts",
+  "prompt_profile": "journalist",
+  "audience_context": "",
+  "platform_context": ""
 }
 ```
+
+Set `"prompt_profile": "all"` to run all registered profiles in one invocation; outputs land in separate subdirectories for side-by-side comparison.
 
 ### Configuration
 

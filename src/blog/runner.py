@@ -4,6 +4,7 @@ Input file is fixed at data/pipeline-output/important_items.json.
 Run `uv run horizon` first to produce that file, then `uv run horizon-blog`.
 """
 
+import argparse
 import asyncio
 import json
 import sys
@@ -18,7 +19,9 @@ from ..ai.client import create_ai_client
 from ..ai.utils import parse_json_response
 from ..models import Config, ContentItem
 from ..storage.manager import StorageManager
-from .models import BlogPost
+from .models import BlogConfig, BlogPost
+from .profiles import PROFILES
+from .profiles.profile import BlogPromptProfile
 from .prompts import RELEVANCE_RANKING_SYSTEM, RELEVANCE_RANKING_USER
 from .writer import BlogWriter
 
@@ -40,6 +43,20 @@ def load_important_items(path: Path) -> List[ContentItem]:
         sys.exit(0)
 
     return [ContentItem(**item) for item in data]
+
+
+def resolve_profiles(name: str) -> List[BlogPromptProfile]:
+    """Return the list of profiles to run for the given profile name."""
+    if name == "all":
+        return list(PROFILES.values())
+    if name not in PROFILES:
+        available = ", ".join(PROFILES.keys())
+        print(
+            f"[error] Unknown prompt_profile '{name}'. Available profiles: {available}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return [PROFILES[name]]
 
 
 async def rank_by_relevance(
@@ -92,23 +109,34 @@ async def rank_by_relevance(
 
 
 async def generate_and_save_posts(
-    items: List[ContentItem], config: Config, console: Console
+    items: List[ContentItem],
+    config: Config,
+    profile: BlogPromptProfile,
+    console: Console,
 ) -> None:
-    """Generate blog posts and write them to disk."""
+    """Generate blog posts for one profile and write them to disk."""
     if not items:
         console.print("[yellow]No items to process — skipping blog generation.[/yellow]")
         return
 
-    blog_cfg = config.blog
+    blog_cfg = config.blog or BlogConfig()
     ai_client = create_ai_client(config.ai)
-    writer = BlogWriter(ai_client)
+    writer = BlogWriter(
+        ai_client,
+        profile=profile,
+        audience_context=blog_cfg.audience_context,
+        platform_context=blog_cfg.platform_context,
+    )
     languages = list(config.ai.languages)
 
-    console.print(f"📝 Generating blog posts for {len(items)} items in {languages}...")
+    console.print(
+        f"📝 [{profile.name}] Generating blog posts for {len(items)} items in {languages}..."
+    )
     posts_by_lang = await writer.generate_blog_posts(items, languages)
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    archive_dir = Path(blog_cfg.output_dir if blog_cfg else "data/blog-posts")
+    # Profile-scoped output directory for side-by-side comparison
+    archive_dir = Path(blog_cfg.output_dir) / profile.name
 
     for lang, posts in posts_by_lang.items():
         for post in posts:
@@ -116,9 +144,9 @@ async def generate_and_save_posts(
             archive_path = archive_dir / f"{today}-{post.slug}-{lang}.md"
             archive_path.write_text(post.markdown, encoding="utf-8")
 
-            posts_dir = Path("docs/_posts")
-            posts_dir.mkdir(parents=True, exist_ok=True)
-            jekyll_path = posts_dir / f"{today}-{post.slug}-{lang}.md"
+            jekyll_dir = Path("docs/_posts") / profile.name
+            jekyll_dir.mkdir(parents=True, exist_ok=True)
+            jekyll_path = jekyll_dir / f"{today}-{post.slug}-{lang}.md"
 
             front_matter = (
                 "---\n"
@@ -127,6 +155,7 @@ async def generate_and_save_posts(
                 f"title: \"{post.title.replace(chr(34), chr(39))}\"\n"
                 f"date: {today}\n"
                 f"lang: {lang}\n"
+                f"profile: {profile.name}\n"
                 f"score: {post.score}\n"
                 f"original_url: \"{post.url}\"\n"
                 f"tags: [{', '.join(post.tags)}]\n"
@@ -143,14 +172,14 @@ async def generate_and_save_posts(
             jekyll_path.write_text(front_matter + content, encoding="utf-8")
 
         console.print(
-            f"   {lang.upper()}: {len(posts)} blog posts saved to {archive_dir}/ and docs/_posts/"
+            f"   {lang.upper()}: {len(posts)} posts → {archive_dir}/ and docs/_posts/{profile.name}/"
         )
 
     total = sum(len(p) for p in posts_by_lang.values())
     console.print(f"   Total: {total} blog posts generated\n")
 
 
-async def _run() -> None:
+async def _run(profile_arg: str | None) -> None:
     load_dotenv()
     console = Console()
     console.print("[bold cyan]📝 Horizon Blog — Starting blog generation...[/bold cyan]\n")
@@ -161,8 +190,8 @@ async def _run() -> None:
     items = load_important_items(IMPORTANT_ITEMS_PATH)
     console.print(f"📥 Loaded {len(items)} items from {IMPORTANT_ITEMS_PATH}\n")
 
-    blog_cfg = config.blog
-    max_posts = blog_cfg.max_posts if blog_cfg else 4
+    blog_cfg = config.blog or BlogConfig()
+    max_posts = blog_cfg.max_posts
 
     ai_client = create_ai_client(config.ai)
     items = await rank_by_relevance(items, ai_client, console)
@@ -171,8 +200,19 @@ async def _run() -> None:
         items = items[:max_posts]
         console.print(f"🏆 Selected top {max_posts} items by relevance\n")
 
-    await generate_and_save_posts(items, config, console)
+    profile_name = profile_arg or blog_cfg.prompt_profile
+    profiles = resolve_profiles(profile_name)
+    for profile in profiles:
+        await generate_and_save_posts(items, config, profile, console)
 
 
 def main() -> None:
-    asyncio.run(_run())
+    available = ", ".join(PROFILES.keys())
+    parser = argparse.ArgumentParser(description="Generate blog posts from Horizon pipeline output.")
+    parser.add_argument(
+        "--profile",
+        metavar="PROFILE",
+        help=f"Prompt profile to use: {available}, or 'all'. Overrides config.json.",
+    )
+    args = parser.parse_args()
+    asyncio.run(_run(args.profile))

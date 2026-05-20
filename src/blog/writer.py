@@ -11,11 +11,10 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCo
 from ddgs import DDGS
 
 from ..ai.client import AIClient
-from ..ai.prompts import CONCEPT_EXTRACTION_SYSTEM, CONCEPT_EXTRACTION_USER
 from ..ai.utils import parse_json_response
 from ..models import ContentItem
 from .models import BlogPost
-from .prompts import BLOG_POST_SYSTEM, BLOG_POST_USER
+from .profiles.profile import BlogPromptProfile
 
 
 LANGUAGE_NAMES = {
@@ -24,11 +23,23 @@ LANGUAGE_NAMES = {
 }
 
 
+def _safe_format(template: str, **kwargs) -> str:
+    """Format a template string, leaving unknown placeholders unchanged."""
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"
+    return template.format_map(_SafeDict(**kwargs))
+
+
 class BlogWriter:
     """Generates individual blog posts for high-scoring content items."""
 
-    def __init__(self, ai_client: AIClient):
+    def __init__(self, ai_client: AIClient, profile: BlogPromptProfile,
+                 audience_context: str = "", platform_context: str = ""):
         self.client = ai_client
+        self.profile = profile
+        self.audience_context = audience_context
+        self.platform_context = platform_context
 
     async def generate_blog_posts(
         self,
@@ -49,7 +60,7 @@ class BlogWriter:
             MofNCompleteColumn(),
             transient=True,
         ) as progress:
-            task = progress.add_task("Writing blog posts", total=total)
+            task = progress.add_task(f"[{self.profile.name}] Writing blog posts", total=total)
 
             for item in items:
                 for lang in languages:
@@ -116,8 +127,24 @@ class BlogWriter:
         comments_section = f"\n**Community Comments:**\n{comments_text}\n" if comments_text else ""
         language_name = LANGUAGE_NAMES.get(language, language)
 
-        system_prompt = BLOG_POST_SYSTEM.format(language_name=language_name)
-        user_prompt = BLOG_POST_USER.format(
+        # Build optional context sections for profiles that support them
+        audience_context_section = (
+            f"\n**Target audience:** {self.audience_context}\n"
+            if self.audience_context else ""
+        )
+        platform_context_section = (
+            f"\n**Platform context:** {self.platform_context}\n"
+            if self.platform_context else ""
+        )
+
+        system_prompt = _safe_format(
+            self.profile.blog_system,
+            language_name=language_name,
+            audience_context_section=audience_context_section,
+            platform_context_section=platform_context_section,
+        )
+        user_prompt = _safe_format(
+            self.profile.blog_user,
             language_name=language_name,
             title=item.title,
             url=str(item.url),
@@ -162,8 +189,8 @@ class BlogWriter:
         )
 
     async def _extract_concepts(self, item: ContentItem, content_text: str) -> List[str]:
-        """Ask AI to identify concepts that need explanation."""
-        user_prompt = CONCEPT_EXTRACTION_USER.format(
+        """Generate web search queries using the profile's research prompts."""
+        user_prompt = self.profile.research_user.format(
             title=item.title,
             summary=item.ai_summary or item.title,
             tags=", ".join(item.ai_tags) if item.ai_tags else "",
@@ -172,7 +199,7 @@ class BlogWriter:
 
         try:
             response = await self.client.complete(
-                system=CONCEPT_EXTRACTION_SYSTEM,
+                system=self.profile.research_system,
                 user=user_prompt,
                 temperature=0.3,
             )

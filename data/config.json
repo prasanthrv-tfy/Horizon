@@ -134,6 +134,15 @@
     "ai_score_threshold": 8.0,
     "max_blog_posts": 4,
     "time_window_hours": 168,
-    "topics": ["AI", "machine learning", "large language models", "ai model releases", "open source ai tools"]
+    "topics": [
+      "AI",
+      "machine learning",
+      "large language models",
+      "ai model releases",
+      "open source ai tools"
+    ]
+  },
+  "blog": {
+    "prompt_profile": "journalist"
   }
 }

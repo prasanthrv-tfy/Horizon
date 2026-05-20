@@ -25,3 +25,6 @@ class BlogConfig(BaseModel):
     max_posts: int = 4
     topics: List[str] = []
     output_dir: str = "data/blog-posts"
+    prompt_profile: str = "journalist"
+    audience_context: str = ""
+    platform_context: str = ""
