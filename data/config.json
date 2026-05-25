@@ -19,7 +19,7 @@
         "type": "repo_releases",
         "owner": "astral-sh",
         "repo": "uv",
-        "enabled": true
+        "enabled": false
       }
     ],
     "hackernews": {
@@ -132,8 +132,7 @@
   },
   "filtering": {
     "ai_score_threshold": 8.0,
-    "max_blog_posts": 4,
-    "time_window_hours": 168,
+    "time_window_hours": 720,
     "topics": [
       "AI",
       "machine learning",
@@ -143,6 +142,7 @@
     ]
   },
   "blog": {
-    "prompt_profile": "journalist"
+    "max_posts": 4,
+    "prompt_profile": "practitioner"
   }
 }

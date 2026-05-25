@@ -538,7 +538,7 @@ class HorizonOrchestrator:
 
     def _save_important_items(self, items: List[ContentItem]) -> None:
         """Save important items to disk for consumption by horizon-blog."""
-        output_path = Path("data/pipeline-output/important_items.json")
+        output_path = Path("artifacts/pipeline-output/important_items.json")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps([item.model_dump() for item in items], indent=2, default=str),

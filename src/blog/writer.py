@@ -75,8 +75,9 @@ class BlogWriter:
         return results
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(min=2, max=10),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(min=2, max=30),
+        reraise=True,
     )
     async def _generate_single_post(
         self, item: ContentItem, language: str

@@ -62,5 +62,6 @@ todo.txt
 .pytest_cache
 tmp/
 data/summaries
-data/pipeline-output
-data/blog-posts
+artifacts/
+
+docs/_posts
