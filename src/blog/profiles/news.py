@@ -1,13 +1,10 @@
-from ..models import ScoringDimension
+from ..models import GatePath, PathDimensionConfig, ScoringDimension
 from .profile import BlogPromptProfile
 
 _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="significance",
         description="How broadly significant is this development for the AI/tech landscape? Does it affect many people, products, or industries?",
-        gate_threshold=6.0,
-        path_a_weight=0.45,
-        path_b_weight=0.0,
         anchors={
             "1": "Niche announcement affecting a tiny audience",
             "5": "Noteworthy for a specific community but limited broader impact",
@@ -18,9 +15,6 @@ _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="newsworthiness",
         description="Is this timely, original, and genuinely new? Is it a primary announcement rather than derivative commentary?",
-        gate_threshold=5.0,
-        path_a_weight=0.35,
-        path_b_weight=0.0,
         anchors={
             "1": "Old news resurfacing or pure opinion with no new facts",
             "5": "Secondary coverage of a genuine event with some new angle",
@@ -31,9 +25,6 @@ _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="narrative_clarity",
         description="Is there a clear, compelling story a non-expert reader can follow? Can the 'why it matters' be explained accessibly?",
-        gate_threshold=4.0,
-        path_a_weight=0.20,
-        path_b_weight=0.0,
         anchors={
             "1": "Highly technical or jargon-heavy with no accessible angle",
             "5": "Story exists but requires significant background to appreciate",
@@ -44,10 +35,17 @@ _SCORING_DIMENSIONS = [
 ]
 
 PROFILE = BlogPromptProfile(
-    name="journalist",
+    name="news",
     scoring_dimensions=_SCORING_DIMENSIONS,
     gate_paths=[
-        ["significance", "newsworthiness", "narrative_clarity"],
+        GatePath(
+            name="news_stories",
+            dimensions=[
+                PathDimensionConfig(dimension="significance",       weight=0.45, threshold=6.0),
+                PathDimensionConfig(dimension="newsworthiness",     weight=0.35, threshold=5.0),
+                PathDimensionConfig(dimension="narrative_clarity",  weight=0.20, threshold=4.0),
+            ],
+        ),
     ],
     blog_system="""You are an expert technology journalist and technical writer. Your job is to write a comprehensive, well-structured blog post about a significant tech news item.
 

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from ..models import ScoringDimension
+    from ..models import GatePath, ScoringDimension
 
 
 @dataclass
@@ -17,5 +17,4 @@ class BlogPromptProfile:
     # DEPRECATED: replaced by scoring_dimensions + gate_paths. Ignored when scoring_dimensions is set.
     ranking_context: str = ""
     scoring_dimensions: List["ScoringDimension"] = field(default_factory=list)
-    # Each path is a list of dimension names; item included if ANY path has ALL dims >= threshold.
-    gate_paths: List[List[str]] = field(default_factory=list)
+    gate_paths: List["GatePath"] = field(default_factory=list)

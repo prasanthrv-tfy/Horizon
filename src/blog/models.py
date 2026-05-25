@@ -15,11 +15,24 @@ class ScoringDimension:
 
     name: str
     description: str
-    gate_threshold: float
-    path_a_weight: float
-    path_b_weight: float
     anchors: Dict[str, str]  # e.g. {"1": "no ML content", "5": "incremental", "10": "paradigm shift"}
-    path_thresholds: Dict[str, float] = field(default_factory=dict)  # e.g. {"A": 7.0} overrides gate_threshold per path
+
+
+@dataclass
+class PathDimensionConfig:
+    """Configures how one dimension is used within a specific gate path."""
+
+    dimension: str   # must match a ScoringDimension.name in the profile
+    weight: float
+    threshold: float
+
+
+@dataclass
+class GatePath:
+    """A named gate path that owns its dimension configs (thresholds and weights)."""
+
+    name: str
+    dimensions: List[PathDimensionConfig] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +69,6 @@ class BlogConfig(BaseModel):
     max_posts: int = 4
     topics: List[str] = []
     output_dir: str = "artifacts/blog-posts"
-    prompt_profile: str = "practitioner"
+    prompt_profile: str = "engineer"
     audience_context: str = ""
     platform_context: str = ""

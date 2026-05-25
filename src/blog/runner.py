@@ -159,14 +159,11 @@ async def rank_by_relevance(
     return items
 
 
-def _compute_weighted_sum(
-    dim_scores: dict, path_dims: list, use_path_b: bool
-) -> float:
+def _compute_weighted_sum(dim_scores: dict, gate_path) -> float:
     total = 0.0
-    for dim in path_dims:
-        score = dim_scores.get(dim.name, {}).get("score", 0)
-        weight = dim.path_b_weight if use_path_b else dim.path_a_weight
-        total += weight * score
+    for pdc in gate_path.dimensions:
+        score = dim_scores.get(pdc.dimension, {}).get("score", 0)
+        total += pdc.weight * score
     return round(total, 3)
 
 
@@ -219,9 +216,7 @@ async def score_items_for_profile(
     dim_lines = []
     for d in dims:
         anchor_text = " | ".join(f"{k}={v}" for k, v in sorted(d.anchors.items(), key=lambda x: int(x[0])))
-        dim_lines.append(
-            f"**{d.name}**: {d.description}\n  Anchors: {anchor_text}\n  Gate threshold: {d.gate_threshold}"
-        )
+        dim_lines.append(f"**{d.name}**: {d.description}\n  Anchors: {anchor_text}")
     dimensions_text = "\n\n".join(dim_lines)
 
     console.print(f"🔬 [{profile.name}] Scoring {len(items)} items on {len(dims)} dimensions...")
@@ -241,44 +236,38 @@ async def score_items_for_profile(
 
         # Evaluate each gate path
         path_results: dict = {}
-        for path_idx, path_dim_names in enumerate(gate_paths):
-            label = chr(ord("A") + path_idx)
-            path_dims = [dim_map[n] for n in path_dim_names if n in dim_map]
+        for gate_path in gate_paths:
             passed = True
             failed: List[str] = []
             scores_snapshot = {}
-            for d in path_dims:
-                score = dim_scores.get(d.name, {}).get("score", 0)
-                scores_snapshot[d.name] = score
-                threshold = d.path_thresholds.get(label, d.gate_threshold)
-                if score < threshold:
+            for pdc in gate_path.dimensions:
+                score = dim_scores.get(pdc.dimension, {}).get("score", 0)
+                scores_snapshot[pdc.dimension] = score
+                if score < pdc.threshold:
                     passed = False
-                    failed.append(d.name)
-            path_results[label] = {"passed": passed, "scores": scores_snapshot, "failed_gates": failed}
+                    failed.append(pdc.dimension)
+            path_results[gate_path.name] = {"passed": passed, "scores": scores_snapshot, "failed_gates": failed}
 
-        # Determine inclusion
+        # Determine inclusion (first passing path wins)
         inclusion_path = None
         failed_gates: dict = {}
-        for label, pr in path_results.items():
+        for gate_path in gate_paths:
+            pr = path_results[gate_path.name]
             if pr["passed"]:
-                inclusion_path = label
+                inclusion_path = gate_path.name
                 break
             else:
-                failed_gates[label] = pr["failed_gates"]
+                failed_gates[gate_path.name] = pr["failed_gates"]
         included = inclusion_path is not None
 
-        # Compute weighted sum using ALL profile dimensions (not just gate dims),
-        # so ranking-only dimensions with non-zero weights contribute to ordering.
+        # Compute weighted sum from the winning path's dimension configs
         weighted_sum = 0.0
         if included:
-            use_b = inclusion_path != "A"
-            weighted_sum = _compute_weighted_sum(dim_scores, dims, use_b)
+            winning_path = next(gp for gp in gate_paths if gp.name == inclusion_path)
+            weighted_sum = _compute_weighted_sum(dim_scores, winning_path)
         else:
-            # Compute best possible sum across all paths for ranking/logging even when excluded
-            sums = []
-            for path_idx in range(len(gate_paths)):
-                use_b = path_idx != 0
-                sums.append(_compute_weighted_sum(dim_scores, dims, use_b))
+            # Best possible sum across all paths for ranking/logging even when excluded
+            sums = [_compute_weighted_sum(dim_scores, gp) for gp in gate_paths]
             weighted_sum = max(sums) if sums else 0.0
 
         scored_items.append(ScoredItem(
@@ -305,7 +294,7 @@ async def score_items_for_profile(
         )
         wsum_str = f" {si.weighted_sum:>6.2f}"
         if si.included:
-            decision = f"[green]✓ Path {si.inclusion_path}[/green]"
+            decision = f"[green]✓ {si.inclusion_path}[/green]"
         else:
             all_failed = [g for gs in si.failed_gates.values() for g in gs]
             decision = f"[red]✗ ({', '.join(dict.fromkeys(all_failed))})[/red]"
@@ -379,7 +368,7 @@ def _write_ranking_results(
 
             if si.included:
                 star = " ⭐" if si.item.id in top_ids else ""
-                decision = f"✓ Path {si.inclusion_path}{star}"
+                decision = f"✓ {si.inclusion_path}{star}"
             else:
                 all_failed = list(dict.fromkeys(g for gs in si.failed_gates.values() for g in gs))
                 decision = "✗ " + ", ".join(all_failed)

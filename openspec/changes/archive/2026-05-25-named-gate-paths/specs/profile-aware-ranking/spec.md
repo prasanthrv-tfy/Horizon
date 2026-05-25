@@ -1,16 +1,4 @@
-# Profile-Aware Ranking Spec
-
-## Requirements
-
-### Requirement: BlogPromptProfile carries a ranking_context field
-**DEPRECATED** — superseded by `scoring_dimensions` and `gate_paths` on `BlogPromptProfile`. The `ranking_context` string is insufficient to drive gate-based filtering with per-dimension thresholds. The field is retained for backwards compatibility but is ignored when `scoring_dimensions` is non-empty.
-
----
-
-### Requirement: rank_by_relevance accepts optional audience context
-**DEPRECATED** — `rank_by_relevance()` is replaced by `score_items_for_profile()` for profiles with scoring dimensions. The audience context concept is now expressed through `ScoringDimension` definitions and their anchors. `rank_by_relevance()` remains available as a fallback for profiles without scoring dimensions.
-
----
+## MODIFIED Requirements
 
 ### Requirement: Ranking runs independently per profile
 The blog runner SHALL call scoring or ranking once per profile (inside the profile loop). When a profile has `scoring_dimensions` defined, `score_items_for_profile()` is used and gate filtering is applied. When `scoring_dimensions` is empty, `rank_by_relevance()` is used as a fallback and top-N selection applies without gate filtering.

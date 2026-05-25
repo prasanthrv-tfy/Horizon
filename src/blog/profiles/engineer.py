@@ -1,30 +1,26 @@
-from ..models import ScoringDimension
+from ..models import GatePath, PathDimensionConfig, ScoringDimension
 from .profile import BlogPromptProfile
 
 _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="ml_engineering_relevance",
-        description="Does this directly concern building, fine-tuning, serving, or evaluating ML models in production?",
-        gate_threshold=7.0,
-        path_a_weight=0.55,
-        path_b_weight=0.35,
+        description="Does this directly concern building, fine-tuning, serving, evaluating, or securing ML models and agent systems in production?",
         anchors={
             "1": "No ML engineering content — business, policy, or consumer product news",
-            "5": "Tangentially ML-related (platform news, infra update with minor ML angle)",
-            "8": "Directly about a technique, tool, or result engineers should act on",
+            "3": "Enterprise partnership, vendor deal, or distribution agreement where the subject is ML but the content is business/PR — even if benchmark results are mentioned in passing, no engineering artifact (paper, model weights, API, or technical docs) is provided that an engineer can act on",
+            "4": "ML applied to an unrelated domain (mathematics, law, biology, climate) where the content focuses on the domain result, not on the ML technique or engineering method — the finding cannot be transferred to building or operating ML systems",
+            "5": "Tangentially ML-related (platform news, infra update with minor ML angle); OR enterprise distribution announcement where an existing model is made available through a new vendor/channel with no new technical content",
+            "8": "Directly about a technique, tool, result, or safety/reliability finding that engineers building or operating ML systems should act on or be aware of",
             "10": "Paradigm shift in how models are trained, served, or evaluated",
         },
     ),
     ScoringDimension(
         name="technical_substance",
         description="Does this contain enough technical detail that an ML engineer can learn something concrete — about architecture, performance, methodology, or integration? A technically rich announcement scores as high as a deployment guide. Artifact availability matters but is not required.",
-        gate_threshold=5.0,
-        path_a_weight=0.45,
-        path_b_weight=0.30,
-        path_thresholds={"A": 7.0},  # Path A (research): requires richer technical depth
         anchors={
             "1": "Pure business/PR with no technical details — partnership deal, funding round, executive hire",
-            "4": "Vague capability claims with no supporting numbers, architecture details, or methodology; OR feature announced with no technical specifics and no confirmed availability",
+            "4": "Vague capability claims with no supporting numbers, architecture details, or methodology; OR pure announcement with no confirmed availability and no technical specifics",
+            "5": "Research or lab blog post that describes a method, finding, or benchmark at a conceptual level — some methodology described, but key implementation details, reproducible numbers, or evaluation protocol are not provided",
             "6": "Technically rich content an ML engineer can learn from: new open or API-accessible model with architecture details, efficiency numbers, or benchmark results; OR working SDK/API with technical docs; OR engineering blog with concrete implementation details or performance measurements; OR research algorithm with experimental results — a formal paper or public repo is NOT required to reach this score",
             "7": "Deployed model with model card and benchmark results; OR paper with clear methodology, concrete experiments, and reproducible numbers",
             "9": "Open-weights model with full technical report and benchmark suite, OR paper + code + benchmark methodology",
@@ -34,9 +30,6 @@ _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="production_applicability",
         description="Can a TrueFoundry user deploy, integrate, or apply this to their ML stack today or within a sprint?",
-        gate_threshold=6.0,
-        path_a_weight=0.0,
-        path_b_weight=0.20,
         anchors={
             "1": "Theoretical or hypothetical — years from being usable",
             "5": "Limited/beta access or requires significant custom work",
@@ -47,9 +40,6 @@ _SCORING_DIMENSIONS = [
     ScoringDimension(
         name="ai_ecosystem_significance",
         description="Is this a major model release or significant API/product change from a key AI provider (OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek, Cohere, xAI, etc.) that TrueFoundry users would deploy?",
-        gate_threshold=7.0,
-        path_a_weight=0.0,
-        path_b_weight=0.15,
         anchors={
             "1": "Internal tooling or niche product with limited audience",
             "5": "Minor model variant or incremental version bump",
@@ -57,14 +47,40 @@ _SCORING_DIMENSIONS = [
             "10": "Flagship model release (GPT-5, Claude 4, Llama 4, Gemini 2) or paradigm-shifting product change",
         },
     ),
+    ScoringDimension(
+        name="engineering_insight",
+        description="Does this advance an ML engineer's understanding of how to design, build, evaluate, or operate ML systems — independent of whether it is immediately deployable? Score on what a practitioner learns, not on production readiness.",
+        anchors={
+            "1": "No engineering insight — pure business news, market commentary, or consumer product update with nothing an engineer can learn",
+            "4": "Broadly interesting to ML people but does not advance engineering knowledge — ML applied to an unrelated domain (mathematics, law, biology, climate) where the result is domain-specific and the technique cannot be transferred; OR regulatory, legal, or market news with no engineering implication",
+            "6": "Directly informs how practitioners should think about designing, evaluating, or operating ML or agent systems — concrete findings or methodology that updates engineering judgment, even if not deployable today",
+            "8": "Hands-on research with clear engineering implications that practitioners should incorporate into their workflow or mental model — e.g. new failure mode in multi-agent systems, inference scaling tradeoff, alignment evaluation methodology",
+            "10": "Paradigm-shifting engineering insight with validated results that changes how ML systems should be built or operated",
+        },
+    ),
 ]
 
 PROFILE = BlogPromptProfile(
-    name="practitioner",
+    name="engineer",
     scoring_dimensions=_SCORING_DIMENSIONS,
     gate_paths=[
-        ["ml_engineering_relevance", "technical_substance"],                                    # Path A: Research awareness
-        ["ml_engineering_relevance", "technical_substance", "production_applicability"],        # Path B: Production ready
+        GatePath(
+            name="engineering_applicability",
+            dimensions=[
+                PathDimensionConfig(dimension="ml_engineering_relevance", weight=0.35, threshold=7.0),
+                PathDimensionConfig(dimension="technical_substance",       weight=0.30, threshold=5.0),
+                PathDimensionConfig(dimension="production_applicability",  weight=0.20, threshold=6.0),
+                PathDimensionConfig(dimension="ai_ecosystem_significance", weight=0.15, threshold=7.0),
+            ],
+        ),
+        GatePath(
+            name="technical_insights",
+            dimensions=[
+                PathDimensionConfig(dimension="ml_engineering_relevance", weight=0.45, threshold=8.0),
+                PathDimensionConfig(dimension="technical_substance",       weight=0.30, threshold=5.0),
+                PathDimensionConfig(dimension="engineering_insight",       weight=0.25, threshold=6.0),
+            ],
+        ),
     ],
     blog_system="""You are a senior ML engineer writing a technical blog post for other ML engineers. Your readers build, train, fine-tune, deploy, and serve ML models in production. They read fast and have no patience for padding.
 

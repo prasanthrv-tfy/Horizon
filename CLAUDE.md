@@ -16,7 +16,7 @@ uv run horizon --hours 48
 
 # Generate blog posts (run after horizon)
 uv run horizon-blog                          # reads artifacts/pipeline-output/important_items.json
-uv run horizon-blog --profile practitioner   # run a specific profile
+uv run horizon-blog --profile engineer       # run a specific profile
 uv run horizon-blog --profile all            # run all profiles
 uv run horizon-blog --rank-only              # score/rank without generating posts
 uv run horizon-blog --all-posts              # generate posts for all gate-passing items (ignores max_posts)
@@ -101,12 +101,12 @@ Each profile is a Python file in `src/blog/profiles/` exporting a `PROFILE = Blo
 
 | Profile | File | Audience | Gate paths |
 |---|---|---|---|
-| `journalist` | `profiles/journalist.py` | General tech readers | Single path: significance + newsworthiness + narrative_clarity |
-| `practitioner` | `profiles/practitioner.py` | ML/MLOps engineers | Path A (research): ml_eng_rel >= 7 AND substance >= 7; Path B (deployable): ml_eng_rel >= 7 AND substance >= 5 AND applicability >= 6 |
+| `news` | `profiles/news.py` | General tech readers | Single path: significance + newsworthiness + narrative_clarity |
+| `engineer` | `profiles/engineer.py` | ML/MLOps engineers | Path A (research): ml_eng_rel >= 7 AND substance >= 7; Path B (deployable): ml_eng_rel >= 7 AND substance >= 5 AND applicability >= 6 |
 
-The practitioner profile's `ai_ecosystem_significance` dimension is **not** a gate — it contributes only to Path B's weighted sum (weight 0.15) to rank major provider releases above niche ones.
+The engineer profile's `ai_ecosystem_significance` dimension is **not** a gate — it contributes only to Path B's weighted sum (weight 0.15) to rank major provider releases above niche ones.
 
-`BlogPromptProfile` bundles: `blog_system`, `blog_user`, `research_system`, `research_user`, `scoring_dimensions`, `gate_paths`. The research prompts control web search queries — the journalist profile searches for concept explanations, the practitioner profile targets papers, benchmarks, and implementations.
+`BlogPromptProfile` bundles: `blog_system`, `blog_user`, `research_system`, `research_user`, `scoring_dimensions`, `gate_paths`. The research prompts control web search queries — the news profile searches for concept explanations, the engineer profile targets papers, benchmarks, and implementations.
 
 Blog config is optional in `data/config.json`:
 ```json
@@ -114,7 +114,7 @@ Blog config is optional in `data/config.json`:
   "max_posts": 4,
   "topics": [],
   "output_dir": "artifacts/blog-posts",
-  "prompt_profile": "journalist",
+  "prompt_profile": "news",
   "audience_context": "",
   "platform_context": ""
 }

@@ -143,6 +143,6 @@
   },
   "blog": {
     "max_posts": 4,
-    "prompt_profile": "practitioner"
+    "prompt_profile": "engineer"
   }
 }

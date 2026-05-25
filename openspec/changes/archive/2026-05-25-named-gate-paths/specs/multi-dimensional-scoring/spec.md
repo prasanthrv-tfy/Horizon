@@ -1,6 +1,4 @@
-# Multi-Dimensional Blog Scoring Spec
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: ScoringDimension defines a named scoring axis
 A `ScoringDimension` dataclass SHALL exist in `src/blog/models.py` with fields: `name: str`, `description: str`, and `anchors: dict[str, str]` (maps score string values to human-readable descriptions for LLM calibration). It SHALL NOT have `gate_threshold`, `path_a_weight`, `path_b_weight`, `path_c_weight`, or `path_thresholds` fields — all weight and threshold information lives in `PathDimensionConfig` on the `GatePath`.
@@ -81,29 +79,3 @@ For each included item, the weighted sum SHALL be computed using the winning `Ga
 #### Scenario: Excluded item gets best possible sum for reference
 - **WHEN** an item fails all gate paths
 - **THEN** `weighted_sum` is the maximum weighted sum across all paths (using each path's own weights), for display in the ranking table
-
----
-
-### Requirement: Run log written per profile execution
-After scoring and filtering, the runner SHALL write a JSON file to `artifacts/blog-runs/YYYY-MM-DD-{profile}.json` containing: `profile`, `run_at` (ISO-8601), `items_evaluated`, `items_included`, `items_excluded`, and a `results` array with full dimension scores, reasons, path results, weighted sum, and include/exclude decision for every evaluated item.
-
-#### Scenario: Run log written on successful execution
-- **WHEN** `horizon-blog` completes scoring for a profile
-- **THEN** a JSON run log is written to `artifacts/blog-runs/` regardless of how many items passed
-
-#### Scenario: Run log written even when zero items pass
-- **WHEN** no items pass the gates for a profile
-- **THEN** the run log is still written with `items_included: 0` and all items in `results` with `included: false`
-
----
-
-### Requirement: Console output displays scoring table per profile
-The runner SHALL print a table to the console showing, for each evaluated item: its title, per-dimension scores, weighted sum, and include/exclude decision with the winning path or failed gate names.
-
-#### Scenario: Scoring table printed after LLM call
-- **WHEN** scoring completes for a profile
-- **THEN** the console shows one row per item with dimension scores, weighted sum, and decision
-
-#### Scenario: Failed gates named in console output
-- **WHEN** an item is excluded
-- **THEN** the console output identifies which dimension(s) caused the failure
