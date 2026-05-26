@@ -18,7 +18,7 @@ from ..ai.client import create_ai_client
 from ..models import Config, ContentItem
 from ..storage.manager import StorageManager
 from .enricher import enrich_thin_items
-from .loader import load_important_items, resolve_profiles
+from .loader import _clean_title, load_important_items, resolve_profiles
 from .models import BlogConfig
 from .profiles import PROFILES
 from .profiles.profile import BlogPromptProfile
@@ -163,7 +163,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
 
         console.print(f"🏆  [{profile.name}] Selected top {len(selected)} items:")
         for i, item in enumerate(selected, 1):
-            console.print(f"   {i}. {item.title}")
+            console.print(f"   {i}. {_clean_title(item.title)}")
         console.print()
 
         if rank_only:
