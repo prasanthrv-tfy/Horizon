@@ -9,7 +9,7 @@ from typing import List
 
 from rich.console import Console
 
-from ..models import ContentItem
+from ...models import ContentItem
 from .fetcher import ContentFetcher
 
 THIN_CONTENT_THRESHOLD = 500

@@ -63,6 +63,13 @@ class BlogPost:
     published_at: str = ""
 
 
+class PublisherConfig(BaseModel):
+    """Configuration for the publishing pipeline."""
+
+    collection_id: str = ""
+    deduplication_time_window: int = 14  # days
+
+
 class BlogConfig(BaseModel):
     """Configuration for blog post generation."""
 
@@ -72,3 +79,4 @@ class BlogConfig(BaseModel):
     prompt_profile: str = "engineer"
     audience_context: str = ""
     platform_context: str = ""
+    publisher: PublisherConfig = PublisherConfig()

@@ -23,6 +23,9 @@ uv run horizon-blog --all-posts              # generate posts for all gate-passi
 uv run horizon-blog --max-posts 6            # override max_posts from config at runtime
 uv run horizon-blog --items 3,7,15           # generate posts for specific row numbers (bypasses gates)
 
+# Publish blog posts to Webflow (run after horizon-blog)
+uv run horizon-publish                       # deduplicates, generates SEO, pushes drafts to Webflow
+
 # Other entry points
 uv run horizon-wizard      # interactive config setup
 uv run horizon-mcp         # start MCP server
@@ -80,15 +83,39 @@ Token usage is tracked in-memory by `src/ai/tokens.py` and printed after each ru
 
 `src/mcp/service.py::HorizonPipelineService` exposes each pipeline stage as an individually-callable method (`fetch_items`, `score_items`, `filter_items`, `enrich_items`, `generate_summary`, `run_pipeline`). Stage outputs are persisted as JSON to `data/mcp-runs/<run_id>/` so agents can inspect intermediate results. The FastMCP server in `src/mcp/server.py` wraps these methods as tools.
 
-### Blog generation module
+### Blog module
 
 `src/blog/` is a self-contained module added on top of upstream Horizon. It is intentionally isolated so upstream merges only touch ~5 lines in `src/orchestrator.py` and `src/models.py`.
 
-- **`src/blog/models.py`** — `ScoringDimension`, `ScoredItem`, `BlogPost`, `BlogConfig`.
-- **`src/blog/prompts.py`** — `ITEM_SCORING_SYSTEM/USER` (multi-dim scoring) and `RELEVANCE_RANKING_*` (legacy fallback).
-- **`src/blog/writer.py`** — `BlogWriter`: accepts a `BlogPromptProfile`, does DuckDuckGo web searches using the profile's research prompts, then generates a Markdown blog post via the AI client.
-- **`src/blog/runner.py`** — `horizon-blog` entry point: loads `artifacts/pipeline-output/important_items.json`, scores items per profile using `score_items_for_profile()`, applies gate paths, selects top N (or all with `--all-posts`) by weighted sum, calls `BlogWriter` for each, writes to `artifacts/blog-posts/{profile}/` and `docs/_posts/{profile}/`. Run logs written to `artifacts/blog-runs/YYYY-MM-DD-{profile}.json`. At the end of each run, auto-regenerates `artifacts/ranking_results.md` with the full scoring table and cross-profile comparison.
+```
+src/blog/
+  models.py        ← shared: ScoringDimension, ScoredItem, BlogPost, BlogConfig, PublisherConfig
+  profiles/        ← shared: prompt profiles (news, engineer, ...)
+  generator/       ← blog generation pipeline (horizon-blog)
+    runner.py, writer.py, scorer.py, enricher.py, fetcher.py, loader.py, reporter.py, prompts.py
+  publisher/       ← CMS publishing pipeline (horizon-publish)
+    publisher.py   ← abstract Publisher base class
+    webflow.py     ← WebflowPublisher (Webflow Staged Items API)
+    runner.py      ← horizon-publish CLI entry point
+```
+
+**Shared (`src/blog/`)**
+- **`src/blog/models.py`** — `ScoringDimension`, `ScoredItem`, `BlogPost`, `BlogConfig`, `PublisherConfig`.
 - **`src/blog/profiles/`** — prompt profile subpackage (see below).
+
+**Generator (`src/blog/generator/`)**
+- **`generator/prompts.py`** — `ITEM_SCORING_SYSTEM/USER` (multi-dim scoring) and `RELEVANCE_RANKING_*` (legacy fallback).
+- **`generator/writer.py`** — `BlogWriter`: accepts a `BlogPromptProfile`, does DuckDuckGo web searches using the profile's research prompts, then generates a Markdown blog post via the AI client.
+- **`generator/runner.py`** — `horizon-blog` entry point: loads `artifacts/pipeline-output/important_items.json`, scores items per profile using `score_items_for_profile()`, applies gate paths, selects top N (or all with `--all-posts`) by weighted sum, calls `BlogWriter` for each, writes to `artifacts/blog-posts/{profile}/` and `docs/_posts/{profile}/`. Run logs written to `artifacts/blog-runs/YYYY-MM-DD-{profile}.json`. At the end of each run, auto-regenerates `artifacts/ranking_results.md` with the full scoring table and cross-profile comparison.
+
+**Publisher (`src/blog/publisher/`)**
+- **`publisher/publisher.py`** — abstract `Publisher(ABC)` base class with `add_draft`, `list_items`, `get_item`, `publish_draft`, `delete_item`.
+- **`publisher/webflow.py`** — `WebflowPublisher`: `list_items` (paginated, date-filtered), `get_item`, and `add_draft` fully implemented against Webflow Staged Items API.
+- **`publisher/deduplicator.py`** — `deduplicate_posts(posts, webflow_items)` — title-normalised dedup returning `(kept, skipped)`.
+- **`publisher/loader.py`** — `load_post(path)` — reads Jekyll front matter, converts Markdown to HTML, computes reading time.
+- **`publisher/converter.py`** — `convert_markdown(text)` (Python-Markdown + `extra` extensions), `reading_time(text)`.
+- **`publisher/seo.py`** — `generate_seo(title, markdown, ai_client)` — one AI call per post for SEO title (≤60 chars) and meta description (≤160 chars); falls back gracefully on failure.
+- **`publisher/runner.py`** — `horizon-publish` CLI: reads `docs/_posts/`, deduplicates against Webflow collection, generates SEO, pushes drafts one by one, prints pushed/skipped/failed summary. Requires `WEBFLOW_TOKEN` env var and `blog.publisher.collection_id` in config.
 
 #### Multi-dimensional scoring and gate paths
 
@@ -117,7 +144,11 @@ Blog config is optional in `data/config.json`:
   "output_dir": "artifacts/blog-posts",
   "prompt_profile": "news",
   "audience_context": "",
-  "platform_context": ""
+  "platform_context": "",
+  "publisher": {
+    "collection_id": "<webflow-collection-id>",
+    "deduplication_time_window": 14
+  }
 }
 ```
 
@@ -127,4 +158,4 @@ Set `"prompt_profile": "all"` to run all registered profiles in one invocation; 
 
 `data/config.json` is validated by Pydantic against `src/models.py::Config`. Any string value supports `${ENV_VAR}` interpolation (handled in `StorageManager.load_config` before Pydantic sees the data). All API keys are referenced by env-var name, not stored inline.
 
-The prompt strings that drive AI scoring and enrichment live in `src/ai/prompts.py`. Blog-specific prompts live in `src/blog/prompts.py`.
+The prompt strings that drive AI scoring and enrichment live in `src/ai/prompts.py`. Blog-specific prompts live in `src/blog/generator/prompts.py`.

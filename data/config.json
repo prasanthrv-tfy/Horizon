@@ -143,6 +143,9 @@
   },
   "blog": {
     "max_posts": 4,
-    "prompt_profile": "engineer"
+    "prompt_profile": "engineer",
+    "publisher": {
+      "collection_id": "69fdb1f79e0eefe055360e10"
+    }
   }
 }
