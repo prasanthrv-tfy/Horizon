@@ -20,6 +20,7 @@ uv run horizon-blog --profile engineer       # run a specific profile
 uv run horizon-blog --profile all            # run all profiles
 uv run horizon-blog --rank-only              # score/rank without generating posts
 uv run horizon-blog --all-posts              # generate posts for all gate-passing items (ignores max_posts)
+uv run horizon-blog --max-posts 6            # override max_posts from config at runtime
 uv run horizon-blog --items 3,7,15           # generate posts for specific row numbers (bypasses gates)
 
 # Other entry points

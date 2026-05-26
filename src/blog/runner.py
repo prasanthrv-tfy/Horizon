@@ -101,7 +101,7 @@ async def generate_and_save_posts(
     console.print(f"   Total: {total} blog posts generated\n")
 
 
-async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str | None = None, all_posts: bool = False) -> None:
+async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str | None = None, all_posts: bool = False, max_posts_arg: int | None = None) -> None:
     load_dotenv()
     console = Console()
     mode_label = "Ranking only" if rank_only else "Starting blog generation"
@@ -131,7 +131,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         console.print()
 
     blog_cfg = config.blog or BlogConfig()
-    max_posts = None if all_posts else blog_cfg.max_posts
+    max_posts = None if all_posts else (max_posts_arg if max_posts_arg is not None else blog_cfg.max_posts)
 
     ai_client = create_ai_client(config.ai)
 
@@ -199,5 +199,11 @@ def main() -> None:
         action="store_true",
         help="Generate blog posts for all items that passed the gates, ignoring the max_posts limit in config.",
     )
+    parser.add_argument(
+        "--max-posts",
+        metavar="N",
+        type=int,
+        help="Maximum number of blog posts to generate. Overrides max_posts in config.json. Ignored if --all-posts is set.",
+    )
     args = parser.parse_args()
-    asyncio.run(_run(args.profile, rank_only=args.rank_only, items_arg=args.items, all_posts=args.all_posts))
+    asyncio.run(_run(args.profile, rank_only=args.rank_only, items_arg=args.items, all_posts=args.all_posts, max_posts_arg=args.max_posts))
