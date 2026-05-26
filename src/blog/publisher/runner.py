@@ -16,7 +16,7 @@ from rich.console import Console
 
 from ...ai.client import create_ai_client
 from ...storage.manager import StorageManager
-from .deduplicator import deduplicate_posts
+from .deduplicator import deduplicate_posts, semantic_is_duplicate
 from .converter import wrap_html
 from .loader import load_manifest, load_post
 from .seo import generate_seo
@@ -103,34 +103,46 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
             console.print("[yellow]No new posts to publish — all are already in Webflow.[/yellow]")
             return
 
-        # Sort by score descending so --max-drafts takes the highest-ranked posts
+        # Sort by score descending so the highest-ranked posts are published first
         kept_with_scores = sorted(
             kept,
             key=lambda x: x[0].get("score", 0.0),
             reverse=True,
         )
-        if max_drafts is not None and max_drafts < len(kept_with_scores):
-            console.print(
-                f"[dim]Ranking {len(kept_with_scores)} post(s) by score, keeping top {max_drafts}:[/dim]"
-            )
-            for i, (entry, _) in enumerate(kept_with_scores, 1):
-                marker = "✓" if i <= max_drafts else "✗"
-                style = "" if i <= max_drafts else "[dim]"
-                end_style = "" if i <= max_drafts else "[/dim]"
-                console.print(f"   {style}{marker} #{i} (score={entry.get('score', 0)}) {entry.get('filename', '')}{end_style}")
-            console.print()
-            kept_with_scores = kept_with_scores[:max_drafts]
 
-        console.print(f"📤 Publishing {len(kept_with_scores)} new post(s)...\n")
+        # Build existing item list for semantic dedup (title + meta-description)
+        existing_items_for_dedup = [
+            {
+                "title": item.get("fieldData", {}).get("name", ""),
+                "description": item.get("fieldData", {}).get("meta-description", ""),
+            }
+            for item in existing_items
+            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("meta-description")
+        ]
+
+        console.print(f"📤 Publishing up to {max_drafts if max_drafts is not None else 'all'} new post(s)...\n")
         pushed = 0
         failed = 0
+        semantic_skipped: List[Tuple[dict, Path]] = []
 
         for entry, base_dir in kept_with_scores:
+            if max_drafts is not None and pushed >= max_drafts:
+                break
+
+            title = entry.get("title", "")
+            console.print(f"   → {title}")
+
+            # Semantic dedup check before publishing
+            console.print(f"      checking semantic duplicates...")
+            is_dup, matched = await semantic_is_duplicate(title, existing_items_for_dedup, ai_client)
+            if is_dup:
+                console.print(f"      [dim]⊘ semantic duplicate — matches: {matched!r}[/dim]")
+                semantic_skipped.append((entry, base_dir))
+                console.print()
+                continue
+
             try:
                 post = load_post(entry, base_dir)
-                title = post["title"]
-                console.print(f"   → {title}")
-
                 console.print(f"      generating SEO...")
                 seo = await generate_seo(title, post["markdown"], ai_client)
                 post.update(seo)
@@ -149,7 +161,10 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
 
         total_elapsed = (datetime.now(tz=timezone.utc) - t0).total_seconds()
         console.print(
-            f"📊 Pushed: {pushed}  |  Skipped (duplicates): {len(skipped)}  |  Failed: {failed}"
+            f"📊 Pushed: {pushed}"
+            f"  |  Skipped [title]: {len(skipped)}"
+            f"  |  Skipped [semantic]: {len(semantic_skipped)}"
+            f"  |  Failed: {failed}"
             f"  |  Total time: {total_elapsed:.1f}s"
         )
     finally:
