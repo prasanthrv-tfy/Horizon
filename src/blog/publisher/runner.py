@@ -1,7 +1,7 @@
 """horizon-publish CLI: publishes generated blog posts to a CMS.
 
 Run `uv run horizon-blog` first to generate posts, then `uv run horizon-publish`.
-Reads from docs/_posts/ (Jekyll posts with front matter).
+Reads from artifacts/blog-posts/*/posts.json manifests.
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import List, Tuple
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -17,22 +18,28 @@ from ...ai.client import create_ai_client
 from ...storage.manager import StorageManager
 from .deduplicator import deduplicate_posts
 from .converter import wrap_html
-from .loader import load_post
+from .loader import load_manifest, load_post
 from .seo import generate_seo
 from .webflow import WebflowPublisher
 
-JEKYLL_POSTS_DIR = Path("docs/_posts")
-
-
+BLOG_POSTS_DIR = Path("artifacts/blog-posts")
 DUMP_HTML_DIR = Path("artifacts/webflow_content")
 
 
-def _dump_html(posts: list[Path], console: Console) -> None:
+def _collect_posts(console: Console) -> List[Tuple[dict, Path]]:
+    """Load all (entry, base_dir) pairs from posts.json manifests."""
+    all_posts: List[Tuple[dict, Path]] = []
+    for manifest_path in sorted(BLOG_POSTS_DIR.glob("*/posts.json")):
+        all_posts.extend(load_manifest(manifest_path))
+    return all_posts
+
+
+def _dump_html(posts: List[Tuple[dict, Path]], console: Console) -> None:
     DUMP_HTML_DIR.mkdir(parents=True, exist_ok=True)
-    for post_path in posts:
-        post = load_post(post_path)
-        out = DUMP_HTML_DIR / post_path.stem
-        out = out.with_suffix(".html")
+    for entry, base_dir in posts:
+        post = load_post(entry, base_dir)
+        slug = entry.get("slug", entry.get("filename", "post"))
+        out = DUMP_HTML_DIR / f"{slug}.html"
         out.write_text(wrap_html(post), encoding="utf-8")
     console.print(f"[dim]📄 HTML snapshots written to {DUMP_HTML_DIR}[/dim]\n")
 
@@ -56,10 +63,10 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
         )
         sys.exit(1)
 
-    posts = sorted(JEKYLL_POSTS_DIR.glob("**/*.md")) if JEKYLL_POSTS_DIR.exists() else []
+    posts = _collect_posts(console)
     if not posts:
         console.print(
-            f"[yellow]⚠️  No blog posts found in {JEKYLL_POSTS_DIR}. "
+            f"[yellow]⚠️  No blog posts found in {BLOG_POSTS_DIR}. "
             "Run `uv run horizon-blog` first.[/yellow]"
         )
         return
@@ -67,8 +74,8 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
     _dump_html(posts, console)
 
     console.print(f"📂 Ingesting {len(posts)} local post(s):")
-    for p in posts:
-        console.print(f"   • {p.relative_to(JEKYLL_POSTS_DIR)}")
+    for entry, base_dir in posts:
+        console.print(f"   • {entry.get('profile', '')}/{entry.get('filename', '')}")
     console.print()
 
     dedup_days = publisher_cfg.deduplication_time_window if publisher_cfg else 14
@@ -88,40 +95,39 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
 
         if skipped:
             console.print(f"[dim]⊘  Skipped {len(skipped)} duplicate(s):[/dim]")
-            for post in skipped:
-                console.print(f"   [dim]✗ {post.stem}[/dim]")
+            for entry, _ in skipped:
+                console.print(f"   [dim]✗ {entry.get('filename', '')}[/dim]")
             console.print()
 
         if not kept:
             console.print("[yellow]No new posts to publish — all are already in Webflow.[/yellow]")
             return
 
-        # Sort by front-matter score descending so --max-drafts takes the highest-ranked posts
+        # Sort by score descending so --max-drafts takes the highest-ranked posts
         kept_with_scores = sorted(
-            ((p, load_post(p)["score"]) for p in kept),
-            key=lambda x: x[1],
+            kept,
+            key=lambda x: x[0].get("score", 0.0),
             reverse=True,
         )
         if max_drafts is not None and max_drafts < len(kept_with_scores):
             console.print(
                 f"[dim]Ranking {len(kept_with_scores)} post(s) by score, keeping top {max_drafts}:[/dim]"
             )
-            for i, (p, score) in enumerate(kept_with_scores, 1):
+            for i, (entry, _) in enumerate(kept_with_scores, 1):
                 marker = "✓" if i <= max_drafts else "✗"
                 style = "" if i <= max_drafts else "[dim]"
                 end_style = "" if i <= max_drafts else "[/dim]"
-                console.print(f"   {style}{marker} #{i} (score={score}) {p.stem}{end_style}")
+                console.print(f"   {style}{marker} #{i} (score={entry.get('score', 0)}) {entry.get('filename', '')}{end_style}")
             console.print()
             kept_with_scores = kept_with_scores[:max_drafts]
-        kept_scored = [p for p, _ in kept_with_scores]
 
-        console.print(f"📤 Publishing {len(kept_scored)} new post(s)...\n")
+        console.print(f"📤 Publishing {len(kept_with_scores)} new post(s)...\n")
         pushed = 0
         failed = 0
 
-        for post_path in kept_scored:
+        for entry, base_dir in kept_with_scores:
             try:
-                post = load_post(post_path)
+                post = load_post(entry, base_dir)
                 title = post["title"]
                 console.print(f"   → {title}")
 

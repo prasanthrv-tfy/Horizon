@@ -11,24 +11,10 @@ def normalise_title(title: str) -> str:
     return title
 
 
-def _extract_title(post_path: Path) -> str:
-    """Read the post's front matter title field; fall back to filename stem."""
-    try:
-        content = post_path.read_text(encoding="utf-8")
-        for line in content.splitlines():
-            if line.startswith("title:"):
-                raw = line[len("title:"):].strip().strip('"').strip("'")
-                if raw:
-                    return raw
-    except OSError:
-        pass
-    return post_path.stem
-
-
 def deduplicate_posts(
-    posts: List[Path],
+    posts: List[Tuple[dict, Path]],
     webflow_items: List[Dict[str, Any]],
-) -> Tuple[List[Path], List[Path]]:
+) -> Tuple[List[Tuple[dict, Path]], List[Tuple[dict, Path]]]:
     """Return (kept, skipped) — skipped posts have a title already in webflow_items."""
     existing = {
         normalise_title(item.get("fieldData", {}).get("name", ""))
@@ -36,12 +22,12 @@ def deduplicate_posts(
         if item.get("fieldData", {}).get("name")
     }
 
-    kept: List[Path] = []
-    skipped: List[Path] = []
-    for post in posts:
-        title = _extract_title(post)
+    kept: List[Tuple[dict, Path]] = []
+    skipped: List[Tuple[dict, Path]] = []
+    for entry, base_dir in posts:
+        title = entry.get("title", "")
         if normalise_title(title) in existing:
-            skipped.append(post)
+            skipped.append((entry, base_dir))
         else:
-            kept.append(post)
+            kept.append((entry, base_dir))
     return kept, skipped
