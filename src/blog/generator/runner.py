@@ -45,12 +45,13 @@ async def generate_and_save_posts(
         return
 
     blog_cfg = config.blog or BlogConfig()
+    gen_cfg = blog_cfg.generator
     ai_client = create_ai_client(config.ai)
     writer = BlogWriter(
         ai_client,
         profile=profile,
-        audience_context=blog_cfg.audience_context,
-        platform_context=blog_cfg.platform_context,
+        audience_context=gen_cfg.audience_context,
+        platform_context=gen_cfg.platform_context,
     )
     languages = list(config.ai.languages)
 
@@ -60,7 +61,7 @@ async def generate_and_save_posts(
     posts_by_lang = await writer.generate_blog_posts(items, languages)
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    archive_dir = Path(blog_cfg.output_dir) / profile.name
+    archive_dir = Path(gen_cfg.output_dir) / profile.name
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     manifest: list[dict] = []
@@ -126,13 +127,14 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         console.print()
 
     blog_cfg = config.blog or BlogConfig()
-    max_posts = None if all_posts else (max_posts_arg if max_posts_arg is not None else blog_cfg.max_posts)
+    gen_cfg = blog_cfg.generator
+    max_posts = None if all_posts else (max_posts_arg if max_posts_arg is not None else gen_cfg.max_posts)
 
     ai_client = create_ai_client(config.ai)
 
     await enrich_thin_items(items, console)
 
-    profile_name = profile_arg or blog_cfg.prompt_profile
+    profile_name = profile_arg or gen_cfg.profile
     profiles = resolve_profiles(profile_name)
     profiles_scored: dict = {}
     for profile in profiles:

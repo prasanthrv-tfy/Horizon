@@ -183,6 +183,15 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
+
+    # CLI overrides config; fall back to publisher.max_drafts from config
+    max_drafts = args.max_drafts
+    if max_drafts is None:
+        from ...storage.manager import StorageManager as _SM
+        _cfg = _SM().load_config()
+        if _cfg.blog and _cfg.blog.publisher:
+            max_drafts = _cfg.blog.publisher.max_drafts
+
     console = Console()
     console.print("[bold cyan]📤 Horizon Publish — Starting...[/bold cyan]\n")
-    asyncio.run(_run(console, max_drafts=args.max_drafts))
+    asyncio.run(_run(console, max_drafts=max_drafts))

@@ -67,15 +67,22 @@ class PublisherConfig(BaseModel):
 
     collection_id: str = ""
     deduplication_time_window: int = 14  # days
+    max_drafts: Optional[int] = None
+
+
+class GeneratorConfig(BaseModel):
+    """Configuration for the blog generation pipeline."""
+
+    max_posts: int = 4
+    profile: str = "engineer"
+    topics: List[str] = []
+    output_dir: str = "artifacts/blog-posts"
+    audience_context: str = ""
+    platform_context: str = ""
 
 
 class BlogConfig(BaseModel):
-    """Configuration for blog post generation."""
+    """Configuration for the blog module (generator + publisher)."""
 
-    max_posts: int = 4
-    topics: List[str] = []
-    output_dir: str = "artifacts/blog-posts"
-    prompt_profile: str = "engineer"
-    audience_context: str = ""
-    platform_context: str = ""
+    generator: GeneratorConfig = GeneratorConfig()
     publisher: PublisherConfig = PublisherConfig()

@@ -36,7 +36,7 @@ def resolve_profiles(name: str) -> List[BlogPromptProfile]:
     if name not in PROFILES:
         available = ", ".join(PROFILES.keys())
         print(
-            f"[error] Unknown prompt_profile '{name}'. Available profiles: {available}",
+            f"[error] Unknown profile '{name}'. Available profiles: {available}",
             file=sys.stderr,
         )
         sys.exit(1)
