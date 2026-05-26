@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from ..models import GatePath, ScoringDimension
+    from src.blog.models import GatePath, ScoringDimension
 
 
 @dataclass

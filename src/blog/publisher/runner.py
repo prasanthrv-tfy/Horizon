@@ -14,8 +14,8 @@ from typing import List, Tuple
 from dotenv import load_dotenv
 from rich.console import Console
 
-from ...ai.client import create_ai_client
-from ...storage.manager import StorageManager
+from src.ai.client import create_ai_client
+from src.storage.manager import StorageManager
 from .deduplicator import deduplicate_posts, semantic_is_duplicate
 from .converter import wrap_html
 from .loader import load_manifest, load_post
@@ -187,7 +187,7 @@ def main() -> None:
     # CLI overrides config; fall back to publisher.max_drafts from config
     max_drafts = args.max_drafts
     if max_drafts is None:
-        from ...storage.manager import StorageManager as _SM
+        from src.storage.manager import StorageManager as _SM
         _cfg = _SM().load_config()
         if _cfg.blog and _cfg.blog.publisher:
             max_drafts = _cfg.blog.publisher.max_drafts

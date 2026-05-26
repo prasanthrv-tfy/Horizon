@@ -4,9 +4,9 @@ import sys
 from pathlib import Path
 from typing import List
 
-from ...models import ContentItem
-from ..profiles import PROFILES
-from ..profiles.profile import BlogPromptProfile
+from src.models import ContentItem
+from src.blog.profiles import PROFILES
+from src.blog.profiles.profile import BlogPromptProfile
 
 
 def _clean_title(title: str) -> str:

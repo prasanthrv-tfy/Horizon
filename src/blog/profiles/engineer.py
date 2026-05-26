@@ -1,4 +1,4 @@
-from ..models import GatePath, PathDimensionConfig, ScoringDimension
+from src.blog.models import GatePath, PathDimensionConfig, ScoringDimension
 from .profile import BlogPromptProfile
 
 _SCORING_DIMENSIONS = [

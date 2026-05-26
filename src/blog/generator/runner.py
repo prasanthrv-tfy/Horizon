@@ -16,14 +16,14 @@ from typing import List
 from dotenv import load_dotenv
 from rich.console import Console
 
-from ...ai.client import create_ai_client
-from ...models import Config, ContentItem
-from ...storage.manager import StorageManager
+from src.ai.client import create_ai_client
+from src.models import Config, ContentItem
+from src.storage.manager import StorageManager
 from .enricher import enrich_thin_items
 from .loader import _clean_title, load_important_items, resolve_profiles
-from ..models import BlogConfig
-from ..profiles import PROFILES
-from ..profiles.profile import BlogPromptProfile
+from src.blog.models import BlogConfig
+from src.blog.profiles import PROFILES
+from src.blog.profiles.profile import BlogPromptProfile
 from .reporter import _write_ranking_results, _write_run_log
 from .scorer import rank_by_relevance, score_items_for_profile
 from .writer import BlogWriter

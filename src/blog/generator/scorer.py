@@ -3,11 +3,11 @@ from typing import List
 
 from rich.console import Console
 
-from ...ai.utils import parse_json_response
-from ...models import ContentItem
+from src.ai.utils import parse_json_response
+from src.models import ContentItem
 from .loader import _clean_title
-from ..models import ScoredItem
-from ..profiles.profile import BlogPromptProfile
+from src.blog.models import ScoredItem
+from src.blog.profiles.profile import BlogPromptProfile
 from .prompts import (
     ITEM_SCORING_SYSTEM,
     ITEM_SCORING_USER,

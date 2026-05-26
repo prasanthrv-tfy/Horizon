@@ -9,11 +9,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn
 from ddgs import DDGS
 
-from ...ai.client import AIClient
-from ...ai.utils import parse_json_response
-from ...models import ContentItem
-from ..models import BlogPost
-from ..profiles.profile import BlogPromptProfile
+from src.ai.client import AIClient
+from src.ai.utils import parse_json_response
+from src.models import ContentItem
+from src.blog.models import BlogPost
+from src.blog.profiles.profile import BlogPromptProfile
 
 
 LANGUAGE_NAMES = {

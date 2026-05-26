@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from ..models import ContentItem
+    from src.models import ContentItem
 
 
 @dataclass

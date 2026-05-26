@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import List
 
 from .loader import _clean_title
-from ..models import BlogPost, ScoredItem
-from ..profiles.profile import BlogPromptProfile
+from src.blog.models import BlogPost, ScoredItem
+from src.blog.profiles.profile import BlogPromptProfile
 
 
 def _write_ranking_results(
