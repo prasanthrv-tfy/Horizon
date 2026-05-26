@@ -9,7 +9,7 @@ import asyncio
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -60,7 +60,7 @@ async def generate_and_save_posts(
     )
     posts_by_lang = await writer.generate_blog_posts(items, languages)
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_dir = Path(gen_cfg.output_dir) / profile.name
     archive_dir.mkdir(parents=True, exist_ok=True)
 

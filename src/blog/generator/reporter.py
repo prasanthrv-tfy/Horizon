@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -14,7 +14,7 @@ def _write_ranking_results(
     max_posts: int,
 ) -> None:
     """Regenerate ranking_results.md from the current run's scoring data."""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     profile_names = ", ".join(profiles_scored.keys())
     lines: List[str] = []
 
@@ -203,7 +203,7 @@ def _write_run_log(scored_items: List[ScoredItem], profile_name: str) -> str:
     """Persist full scoring details to artifacts/blog-runs/YYYY-MM-DD-{profile}.json."""
     log_dir = Path("artifacts/blog-runs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     log_path = log_dir / f"{today}-{profile_name}.json"
 
     results = []
@@ -222,7 +222,7 @@ def _write_run_log(scored_items: List[ScoredItem], profile_name: str) -> str:
 
     log_data = {
         "profile": profile_name,
-        "run_at": datetime.utcnow().isoformat() + "Z",
+        "run_at": datetime.now(timezone.utc).isoformat(),
         "items_evaluated": len(scored_items),
         "items_included": sum(1 for si in scored_items if si.included),
         "items_excluded": sum(1 for si in scored_items if not si.included),
