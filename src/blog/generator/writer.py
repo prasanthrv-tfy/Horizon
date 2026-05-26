@@ -1,7 +1,6 @@
 """Blog post generation from high-scoring content items."""
 
 import os
-import re
 import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -175,12 +174,9 @@ class BlogWriter:
         if markdown.endswith("```"):
             markdown = markdown[:-3].strip()
 
-        slug = self._make_slug(item.title)
-
         return BlogPost(
             item_id=item.id,
             title=item.title,
-            slug=slug,
             markdown=markdown,
             language=language,
             score=item.ai_score or 0,
@@ -230,12 +226,3 @@ class BlogWriter:
             for r in (results or [])
         ]
 
-    @staticmethod
-    def _make_slug(title: str) -> str:
-        """Generate a URL-safe slug from a title."""
-        slug = title.lower()
-        slug = re.sub(r'[^\w\s-]', '', slug)
-        slug = re.sub(r'[\s_]+', '-', slug)
-        slug = re.sub(r'-+', '-', slug)
-        slug = slug.strip('-')
-        return slug[:80]

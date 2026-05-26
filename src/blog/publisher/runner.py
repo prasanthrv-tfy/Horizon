@@ -38,8 +38,7 @@ def _dump_html(posts: List[Tuple[dict, Path]], console: Console) -> None:
     DUMP_HTML_DIR.mkdir(parents=True, exist_ok=True)
     for entry, base_dir in posts:
         post = load_post(entry, base_dir)
-        slug = entry.get("slug", entry.get("filename", "post"))
-        out = DUMP_HTML_DIR / f"{slug}.html"
+        out = DUMP_HTML_DIR / f"{Path(entry['filename']).stem}.html"
         out.write_text(wrap_html(post), encoding="utf-8")
     console.print(f"[dim]📄 HTML snapshots written to {DUMP_HTML_DIR}[/dim]\n")
 

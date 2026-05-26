@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,27 @@ WEBFLOW_API_BASE = "https://api.webflow.com/v2"
 _PAGE_LIMIT = 100
 
 logger = logging.getLogger(__name__)
+
+
+def _truncate_title(title: str, max_length: int = 60) -> str:
+    if len(title) <= max_length:
+        return title
+    truncated = title[:max_length]
+    boundary = truncated.rfind(' ')
+    return (truncated[:boundary] if boundary > 0 else truncated).strip()
+
+
+def _make_slug(title: str, max_length: int = 60) -> str:
+    slug = title.lower()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    slug = slug.strip('-')
+    if len(slug) > max_length:
+        truncated = slug[:max_length]
+        boundary = truncated.rfind('-')
+        slug = truncated[:boundary] if boundary > 0 else truncated
+    return slug
 
 
 class WebflowPublisher(Publisher):
@@ -28,11 +50,13 @@ class WebflowPublisher(Publisher):
 
     async def add_draft(self, item: dict) -> str:
         """Create a draft CMS item and return the Webflow-assigned item ID."""
+        title = _truncate_title(item.get("title", ""))
+        slug = _make_slug(item.get("title", ""))
         payload = {
             "fieldData": {
-                "name": item.get("title", ""),
-                "slug": item.get("slug", ""),
-                "meta-title": item.get("seo_title", item.get("title", ""))[:60],
+                "name": title,
+                "slug": slug,
+                "meta-title": item.get("seo_title", title)[:60],
                 "meta-description": item.get("seo_description", "")[:160],
                 "content": item.get("html", ""),
                 "published-date": item.get("published_at", ""),

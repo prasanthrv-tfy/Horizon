@@ -97,32 +97,6 @@ def test_clean_title_mixed_emoji_and_text():
     assert _clean_title("🧪 Test: Mixed content") == "Test: Mixed content"
 
 
-# --- BlogWriter._make_slug ---
-
-
-def test_make_slug_spaces_to_hyphens():
-    assert BlogWriter._make_slug("Hello World") == "hello-world"
-
-
-def test_make_slug_removes_special_chars():
-    assert BlogWriter._make_slug("AI: The Future!") == "ai-the-future"
-
-
-def test_make_slug_lowercase():
-    assert BlogWriter._make_slug("GPT-5 Is Here") == "gpt-5-is-here"
-
-
-def test_make_slug_truncates_at_80():
-    long_title = "word " * 30
-    assert len(BlogWriter._make_slug(long_title)) <= 80
-
-
-def test_make_slug_no_leading_trailing_hyphens():
-    slug = BlogWriter._make_slug("  ...Leading and trailing...  ")
-    assert not slug.startswith("-")
-    assert not slug.endswith("-")
-
-
 # --- _strip_html ---
 
 

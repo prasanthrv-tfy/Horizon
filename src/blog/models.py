@@ -54,7 +54,6 @@ class BlogPost:
 
     item_id: str
     title: str
-    slug: str
     markdown: str
     language: str
     score: float

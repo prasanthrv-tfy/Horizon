@@ -17,7 +17,6 @@ def load_post(entry: dict, base_dir: Path) -> dict:
 
     return {
         "title": entry.get("title", md_path.stem),
-        "slug": entry.get("slug", md_path.stem),
         "markdown": body,
         "html": html,
         "tags": entry.get("tags", []),

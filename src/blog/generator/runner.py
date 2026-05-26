@@ -7,6 +7,7 @@ Run `uv run horizon` first to produce that file, then `uv run horizon-blog`.
 import argparse
 import asyncio
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -65,7 +66,9 @@ async def generate_and_save_posts(
     manifest: list[dict] = []
     for lang, posts in posts_by_lang.items():
         for post in posts:
-            filename = f"{today}-{post.slug}-{lang}.md"
+            safe = re.sub(r'[^\w\s-]', '', post.title.lower())
+            safe = re.sub(r'[\s_]+', '-', safe).strip('-')[:60]
+            filename = f"{today}-{safe}-{lang}.md"
             archive_path = archive_dir / filename
             archive_path.write_text(post.markdown, encoding="utf-8")
 
@@ -73,7 +76,6 @@ async def generate_and_save_posts(
             manifest.append({
                 "item_id": post.item_id,
                 "title": post.title,
-                "slug": post.slug,
                 "score": score,
                 "tags": post.tags,
                 "url": post.url,

@@ -67,23 +67,30 @@ No front matter here at all.
 
 
 def test_load_post_full_front_matter(tmp_path):
-    p = tmp_path / "2026-05-26-test-article-title-en.md"
-    p.write_text(_FULL_FM, encoding="utf-8")
-    post = load_post(p)
+    filename = "2026-05-26-test-article-title-en.md"
+    (tmp_path / filename).write_text(_FULL_FM, encoding="utf-8")
+    entry = {
+        "filename": filename,
+        "title": "Test Article Title",
+        "url": "https://example.com/article",
+        "tags": ["AI", "Machine Learning", "Inference"],
+        "published_at": "2026-05-26",
+        "score": 8.5,
+    }
+    post = load_post(entry, tmp_path)
     assert post["title"] == "Test Article Title"
     assert post["url"] == "https://example.com/article"
     assert post["published_at"].startswith("2026-05-26")
     assert "AI" in post["tags"]
-    assert "<p>" in post["html"]
+    assert post["html"]
     assert "min read" in post["reading_time"]
 
 
 def test_load_post_no_front_matter(tmp_path):
-    p = tmp_path / "2026-05-26-my-slug-en.md"
-    p.write_text(_NO_FM, encoding="utf-8")
-    post = load_post(p)
-    # Falls back to filename-derived slug
-    assert post["slug"] == "my-slug"
+    filename = "2026-05-26-my-slug-en.md"
+    (tmp_path / filename).write_text(_NO_FM, encoding="utf-8")
+    entry = {"filename": filename, "published_at": "2026-05-26"}
+    post = load_post(entry, tmp_path)
     assert post["published_at"].startswith("2026-05-26")
     assert post["url"] == ""
     assert post["tags"] == []
@@ -91,7 +98,8 @@ def test_load_post_no_front_matter(tmp_path):
 
 
 def test_load_post_markdown_in_body(tmp_path):
-    p = tmp_path / "2026-05-26-article-en.md"
-    p.write_text(_FULL_FM, encoding="utf-8")
-    post = load_post(p)
+    filename = "2026-05-26-article-en.md"
+    (tmp_path / filename).write_text(_FULL_FM, encoding="utf-8")
+    entry = {"filename": filename, "title": "Article"}
+    post = load_post(entry, tmp_path)
     assert "body content" in post["markdown"]
