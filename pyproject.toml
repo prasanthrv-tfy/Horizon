@@ -31,6 +31,9 @@ openbb = [
     "openbb>=4.4.0",
     "openbb-benzinga>=1.6.0",
 ]
+upload = [
+    "truefoundry>=0.1.0",
+]
 
 [project.scripts]
 horizon = "src.main:main"
@@ -39,6 +42,7 @@ horizon-publish = "src.blog.publisher.runner:main"
 horizon-mcp = "src.mcp.server:main"
 horizon-wizard = "src.setup.wizard:main"
 horizon-webhook = "src.services.webhook_cli:main"
+horizon-upload-artifacts = "src.blog.upload_artifacts:main"
 
 [build-system]
 requires = ["hatchling"]

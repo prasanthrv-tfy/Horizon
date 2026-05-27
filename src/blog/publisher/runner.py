@@ -24,6 +24,7 @@ from .webflow import WebflowPublisher
 
 BLOG_POSTS_DIR = Path("artifacts/blog-posts")
 DUMP_HTML_DIR = Path("artifacts/webflow_content")
+LOGS_DIR = Path("artifacts/logs")
 
 
 def _collect_posts(console: Console) -> List[Tuple[dict, Path]]:
@@ -192,6 +193,12 @@ def main() -> None:
         if _cfg.blog and _cfg.blog.publisher:
             max_drafts = _cfg.blog.publisher.max_drafts
 
-    console = Console()
+    console = Console(record=True)
     console.print("[bold cyan]📤 Horizon Publish — Starting...[/bold cyan]\n")
-    asyncio.run(_run(console, max_drafts=max_drafts))
+    try:
+        asyncio.run(_run(console, max_drafts=max_drafts))
+    finally:
+        (LOGS_DIR / "plain").mkdir(parents=True, exist_ok=True)
+        (LOGS_DIR / "html").mkdir(parents=True, exist_ok=True)
+        (LOGS_DIR / "plain" / "publish.log").write_text(console.export_text(clear=False), encoding="utf-8")
+        (LOGS_DIR / "html" / "publish.html").write_text(console.export_html(), encoding="utf-8")
