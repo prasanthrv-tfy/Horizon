@@ -43,6 +43,8 @@ _SCORING_DIMENSIONS = [
         anchors={
             "1": "Internal tooling or niche product with limited audience",
             "5": "Minor model variant or incremental version bump",
+            "6": "Specific model, tool, or feature released directly by a key AI provider (OpenAI, Anthropic, Google, Meta, Mistral, etc.) that serves a focused production need — e.g. a specialised open-weight model, a safety/privacy tool, or an incremental API addition. Academic papers, third-party tools, and research from universities or non-AI-provider companies do NOT qualify for this score regardless of usefulness.",
+            "7": "Major SDK release, significant new API capability, or important developer tooling update from a key provider that meaningfully changes how engineers build with these systems — e.g. a new agent framework, code execution sandbox, or retrieval API from OpenAI/Anthropic/Google/Meta",
             "8": "Primary announcement of a significant model update or major new capability from a key provider — not secondary coverage or roundups of that announcement",
             "10": "Flagship model release (GPT-5, Claude 4, Llama 4, Gemini 2) or paradigm-shifting product change",
         },
@@ -69,8 +71,8 @@ PROFILE = BlogPromptProfile(
             dimensions=[
                 PathDimensionConfig(dimension="ml_engineering_relevance", weight=0.35, threshold=7.0),
                 PathDimensionConfig(dimension="technical_substance",       weight=0.30, threshold=5.0),
-                PathDimensionConfig(dimension="production_applicability",  weight=0.20, threshold=6.0),
-                PathDimensionConfig(dimension="ai_ecosystem_significance", weight=0.15, threshold=7.0),
+                PathDimensionConfig(dimension="production_applicability",  weight=0.20, threshold=7.0),
+                PathDimensionConfig(dimension="ai_ecosystem_significance", weight=0.15, threshold=5.0),
             ],
         ),
         GatePath(

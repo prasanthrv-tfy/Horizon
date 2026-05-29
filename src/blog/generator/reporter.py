@@ -59,7 +59,14 @@ def _write_ranking_results(
         )[:max_posts]
         top_ids = {si.item.id for si in top_included}
 
-        for row_num, si in enumerate(scored, 1):
+        # Original row number lookup
+        row_num_map = {si.item.id: idx for idx, si in enumerate(scored, 1)}
+
+        # Sort all items by WSum descending (passed first, then failed)
+        sorted_scored = sorted(scored, key=lambda si: (si.included, si.weighted_sum), reverse=True)
+
+        for si in sorted_scored:
+            row_num = row_num_map[si.item.id]
             title = _clean_title(si.item.title).replace("|", "\\|")
             color = "green" if si.included else "red"
             scores_cols = " | ".join(
@@ -81,8 +88,29 @@ def _write_ranking_results(
 
         lines.append("")
 
-        # Top N selected table
+        # Per-path breakdown
         has_multiple_paths = len(profile.gate_paths) > 1
+        all_included = sorted(
+            [si for si in scored if si.included],
+            key=lambda si: si.weighted_sum,
+            reverse=True,
+        )
+
+        if has_multiple_paths and all_included:
+            lines.append("#### By Gate Path\n")
+            for gate_path in profile.gate_paths:
+                path_items = [si for si in all_included if si.inclusion_path == gate_path.name]
+                if not path_items:
+                    continue
+                lines.append(f"**{gate_path.name}** — {len(path_items)} items\n")
+                lines.append("| Rank | Title | WSum |")
+                lines.append("|---|---|---|")
+                for rank, si in enumerate(path_items, 1):
+                    star = " ⭐" if si.item.id in top_ids else ""
+                    lines.append(f"| {rank} | {_clean_title(si.item.title)}{star} | {si.weighted_sum:.2f} |")
+                lines.append("")
+
+        # Top N selected table
         if top_included:
             lines.append(f"#### Top {len(top_included)} selected\n")
             if has_multiple_paths:

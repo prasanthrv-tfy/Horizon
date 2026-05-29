@@ -223,4 +223,19 @@ async def score_items_for_profile(
     included_count = sum(1 for si in scored_items if si.included)
     console.print(f"🏆 [{profile.name}] {included_count}/{len(scored_items)} items passed the gates\n")
 
+    # Per-path breakdown in console
+    if len(profile.gate_paths) > 1:
+        for gate_path in profile.gate_paths:
+            path_items = sorted(
+                [si for si in scored_items if si.inclusion_path == gate_path.name],
+                key=lambda si: si.weighted_sum,
+                reverse=True,
+            )
+            if not path_items:
+                continue
+            console.print(f"  [bold]{gate_path.name}[/bold] ({len(path_items)} items)")
+            for si in path_items:
+                console.print(f"    {si.weighted_sum:>5.2f}  {_clean_title(si.item.title)[:60]}")
+        console.print()
+
     return scored_items

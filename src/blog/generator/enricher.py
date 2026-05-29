@@ -13,6 +13,11 @@ from src.models import ContentItem
 from .fetcher import ContentFetcher
 
 THIN_CONTENT_THRESHOLD = 500
+_HTML_MARKERS = ("<div", "<p>", "<span", "<!--", "<script", "<img")
+
+
+def _looks_like_html(text: str) -> bool:
+    return any(marker in text for marker in _HTML_MARKERS)
 
 
 async def _enrich_one(
@@ -40,13 +45,25 @@ async def _enrich_one(
 
 
 async def enrich_thin_items(items: List[ContentItem], console: Console) -> None:
-    """Fetch or search-enrich items whose content is below THIN_CONTENT_THRESHOLD."""
-    thin = [it for it in items if len(it.content or "") < THIN_CONTENT_THRESHOLD]
-    if not thin:
+    """Fetch or search-enrich items whose content is thin or raw HTML."""
+    import trafilatura
+
+    needs_enrichment = []
+    for it in items:
+        content = it.content or ""
+        if len(content) < THIN_CONTENT_THRESHOLD:
+            needs_enrichment.append(it)
+        elif _looks_like_html(content):
+            # Content is present but raw HTML — extract in-place without re-fetching
+            extracted = trafilatura.extract(content, include_comments=False, include_tables=False) or ""
+            if extracted.strip():
+                it.content = extracted[:2000]
+
+    if not needs_enrichment:
         return
 
-    console.print(f"🔍 Enriching {len(thin)} thin-content items before scoring...")
+    console.print(f"🔍 Enriching {len(needs_enrichment)} thin-content items before scoring...")
     semaphore = asyncio.Semaphore(5)
     async with ContentFetcher() as fetcher:
-        await asyncio.gather(*[_enrich_one(it, fetcher, semaphore, console) for it in thin])
+        await asyncio.gather(*[_enrich_one(it, fetcher, semaphore, console) for it in needs_enrichment])
     console.print()
