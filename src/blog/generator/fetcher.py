@@ -1,15 +1,15 @@
 """Content fetcher for blog pre-scoring enrichment.
 
 Fetches full article text for items whose RSS content is too thin to score reliably.
-Tries a direct URL fetch first; falls back to a DuckDuckGo search on failure.
+Tries a direct URL fetch first (using trafilatura for stable article extraction),
+falls back to a DuckDuckGo search on failure.
 """
 
 import os
 import sys
-from html.parser import HTMLParser
 
 import httpx
-from ddgs import DDGS
+import trafilatura
 
 _FETCH_MAX_CHARS = 2000
 _SEARCH_MIN_CHARS = 200
@@ -31,38 +31,10 @@ _BROWSER_HEADERS = {
 }
 
 
-class _HTMLTextExtractor(HTMLParser):
-    """Minimal HTML-to-text stripper using stdlib html.parser."""
-
-    _SKIP_TAGS = {"script", "style", "noscript", "head", "nav", "footer", "aside"}
-
-    def __init__(self):
-        super().__init__()
-        self._parts: list[str] = []
-        self._skip_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self._SKIP_TAGS:
-            self._skip_depth += 1
-
-    def handle_endtag(self, tag):
-        if tag in self._SKIP_TAGS and self._skip_depth > 0:
-            self._skip_depth -= 1
-
-    def handle_data(self, data):
-        if self._skip_depth == 0:
-            stripped = data.strip()
-            if stripped:
-                self._parts.append(stripped)
-
-    def get_text(self) -> str:
-        return " ".join(self._parts)
-
-
-def _strip_html(html: str) -> str:
-    extractor = _HTMLTextExtractor()
-    extractor.feed(html)
-    return extractor.get_text()
+def _extract_article_text(html: str) -> str:
+    """Extract main article body using trafilatura. Falls back to empty string."""
+    text = trafilatura.extract(html, include_comments=False, include_tables=False) or ""
+    return text[:_FETCH_MAX_CHARS]
 
 
 class ContentFetcher:
@@ -84,14 +56,14 @@ class ContentFetcher:
             await self._client.aclose()
 
     async def fetch_url(self, url: str) -> str:
-        """Fetch URL and return stripped plain text (first 2000 chars). Raises on failure."""
+        """Fetch URL and return article text (first 2000 chars). Raises on failure."""
         if self._client is None:
             raise RuntimeError("ContentFetcher must be used as an async context manager")
         response = await self._client.get(url)
         response.raise_for_status()
-        text = _strip_html(response.text)[:_FETCH_MAX_CHARS]
+        text = _extract_article_text(response.text)
         if len(text) < _SEARCH_MIN_CHARS:
-            raise ValueError(f"fetched text too short ({len(text)} chars)")
+            raise ValueError(f"extracted text too short ({len(text)} chars)")
         return text
 
     def search_fallback(self, title: str, tags: list[str]) -> str:

@@ -110,7 +110,7 @@ async def _score_single_item(
             response = await ai_client.complete(
                 system=ITEM_SCORING_SYSTEM,
                 user=user_prompt,
-                temperature=0.1,
+                temperature=0.0,
             )
             result = parse_json_response(response)
             if result and "items" in result and result["items"]:

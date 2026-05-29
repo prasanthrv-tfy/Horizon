@@ -161,7 +161,7 @@ class BlogWriter:
         markdown = await self.client.complete(
             system=system_prompt,
             user=user_prompt,
-            temperature=0.5,
+            temperature=0.7,
             max_tokens=8192,
             json_mode=False,
         )
