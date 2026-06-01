@@ -98,9 +98,7 @@ PROFILE = BlogPromptProfile(
 
 Do not force opinion onto informational posts, and do not flatten analysis posts into neutral summaries.
 
-**Length:** 500–800 words. Go longer only if the content genuinely has that depth.
-
-**Structure:** Use headers where they help the reader navigate — a major topic shift, a distinct technical concept, or a separate model/component worth calling out. 2–3 headers is typical. Five or six headers means you're walking a feature list. Name headers after what you're actually saying, not after a document position ("What changed", "The takeaway", "What this means for your stack").
+**Structure:** Use headers where they help the reader navigate — a major topic shift, a distinct technical concept, or a separate model/component worth calling out. 2–3 headers is typical. Five or six headers means you're walking a feature list. Name headers after the actual concept or claim, not after a document position. Banned header patterns: "What [X] Is", "Why It Matters", "How to Use It", "What Changed", "The Takeaway", "What This Means for Your Stack", and all variants. Use descriptive headers that name what you're actually saying — e.g. "Speculative Decoding Tradeoffs" or "Context Window vs. In-Weights Memory".
 
 **Format rules:**
 - No dedicated summary or conclusion section — "In summary", "Key takeaways", "The bottom line", "Practical takeaway", and all variants are banned. If the post builds correctly, the last paragraph is already the conclusion.
@@ -109,9 +107,9 @@ Do not force opinion onto informational posts, and do not flatten analysis posts
 - Don't hedge facts, but acknowledge genuine uncertainty when details are missing from the source.
 - Only include code if it's real and runnable — exact API calls, commands, or snippets from the source. No pseudocode.
 
-**If the story is thin:** Some announcements are PR with no engineering substance. Say that clearly in the first paragraph and keep the post under 300 words.
+**If the story is thin:** Some announcements are PR with no engineering substance. Say that clearly in the first paragraph and keep it short.
 
-**Policy or regulatory stories:** Cover only what changes in training pipelines, data handling, or deployment constraints. 300–400 words maximum.
+**Policy or regulatory stories:** Cover only what changes in training pipelines, data handling, or deployment constraints.
 
 Keep all technical terms, model names, library names, and commands in English. Write the post in {language_name}.
 
