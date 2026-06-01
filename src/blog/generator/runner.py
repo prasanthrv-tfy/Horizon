@@ -39,6 +39,7 @@ async def generate_and_save_posts(
     profile: BlogPromptProfile,
     console: Console,
     blog_scores: dict[str, float] | None = None,
+    scored_map: dict | None = None,
 ) -> dict[str, str]:
     """Generate blog posts for one profile and write them to disk.
 
@@ -80,6 +81,7 @@ async def generate_and_save_posts(
         counts[lang] = counts.get(lang, 0) + 1
 
         score = blog_scores.get(post.item_id, post.score) if blog_scores else post.score
+        si = scored_map.get(post.item_id) if scored_map else None
         manifest.append({
             "item_id": post.item_id,
             "title": post.title,
@@ -90,6 +92,8 @@ async def generate_and_save_posts(
             "language": lang,
             "profile": profile.name,
             "filename": filename,
+            "inclusion_path": si.inclusion_path if si else None,
+            "dimensions": si.dimension_scores if si else {},
         })
 
     manifest_path = archive_dir / "posts.json"
@@ -147,6 +151,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
             if pinned_items is not None:
                 selected = pinned_items
                 blog_scores = None
+                scored_map = None
             elif profile.scoring_dimensions:
                 scored = await score_items_for_profile(items, ai_client, console, profile)
                 log_path = _write_run_log(scored, profile.name)
@@ -159,6 +164,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
                 )
                 included_slice = included if max_posts is None else included[:max_posts]
                 blog_scores = {si.item.id: si.weighted_sum for si in included_slice}
+                scored_map = {si.item.id: si for si in included_slice}
                 selected = [si.item for si in included_slice]
                 if not selected:
                     console.print(f"[yellow]⚠️  [{profile.name}] No items passed the gates — skipping post generation.[/yellow]\n")
@@ -167,6 +173,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
                 ranked = await rank_by_relevance(items, ai_client, console, profile.ranking_context)
                 selected = ranked if max_posts is None else ranked[:max_posts]
                 blog_scores = None
+                scored_map = None
 
             console.print(f"🏆  [{profile.name}] Selected top {len(selected)} items:")
             for i, item in enumerate(selected, 1):
@@ -176,7 +183,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
             if rank_only:
                 continue
 
-            titles = await generate_and_save_posts(selected, config, profile, console, blog_scores)
+            titles = await generate_and_save_posts(selected, config, profile, console, blog_scores, scored_map=scored_map)
             if titles:
                 ai_title_maps[profile.name] = titles
 
@@ -221,3 +228,11 @@ def main() -> None:
     )
     args = parser.parse_args()
     asyncio.run(_run(args.profile, rank_only=args.rank_only, items_arg=args.items, all_posts=args.all_posts, max_posts_arg=args.max_posts))
+
+    from src.blog.viewer import generate_results_html
+    storage = StorageManager()
+    config = storage.load_config()
+    blog_cfg = config.blog
+    output_dir = Path(blog_cfg.generator.output_dir) if blog_cfg else Path("artifacts/blog-posts")
+    html_path = generate_results_html(output_dir, model=config.ai.model)
+    Console().print(f"[green]Blog viewer:[/green] {html_path}")
