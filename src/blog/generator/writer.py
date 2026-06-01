@@ -1,9 +1,10 @@
 """Blog post generation from high-scoring content items."""
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import AsyncIterator, Dict, List, Optional
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn
@@ -14,6 +15,13 @@ from src.ai.utils import parse_json_response
 from src.models import ContentItem
 from src.blog.models import BlogPost
 from src.blog.profiles.profile import BlogPromptProfile
+
+
+def _sanitize_ddg_query(query: str) -> str:
+    """Strip boolean operators and phrase-quotes that DuckDuckGo doesn't handle."""
+    q = re.sub(r'\b(OR|AND|NOT)\b', ' ', query)
+    q = q.replace('"', '')
+    return re.sub(r'\s+', ' ', q).strip()
 
 
 LANGUAGE_NAMES = {
@@ -44,12 +52,11 @@ class BlogWriter:
         self,
         items: List[ContentItem],
         languages: List[str],
-    ) -> Dict[str, List[BlogPost]]:
-        """Generate blog posts for each item in each language."""
+    ) -> AsyncIterator[tuple[str, BlogPost]]:
+        """Generate blog posts, yielding (language, post) as each one completes."""
         if not items:
-            return {lang: [] for lang in languages}
+            return
 
-        results: Dict[str, List[BlogPost]] = {lang: [] for lang in languages}
         total = len(items) * len(languages)
 
         with Progress(
@@ -66,12 +73,10 @@ class BlogWriter:
                     try:
                         post = await self._generate_single_post(item, lang)
                         if post:
-                            results[lang].append(post)
+                            yield lang, post
                     except Exception as e:
                         print(f"Error generating blog post for {item.id} ({lang}): {e}")
                     progress.advance(task)
-
-        return results
 
     @retry(
         stop=stop_after_attempt(5),
@@ -174,9 +179,20 @@ class BlogWriter:
         if markdown.endswith("```"):
             markdown = markdown[:-3].strip()
 
+        # Prefer the AI-generated H1 headline over the raw source title.
+        # The source title is often first-person ("Our response to...") or promotional.
+        extracted_title = item.title
+        for line in markdown.split('\n'):
+            stripped = line.strip()
+            if stripped.startswith('# '):
+                extracted_title = stripped[2:].strip()
+                break
+            elif stripped:
+                break
+
         return BlogPost(
             item_id=item.id,
-            title=item.title,
+            title=extracted_title,
             markdown=markdown,
             language=language,
             score=item.ai_score or 0,
@@ -208,6 +224,8 @@ class BlogWriter:
 
     async def _web_search(self, query: str, max_results: int = 3) -> list:
         """Search the web for context via DuckDuckGo."""
+        query = _sanitize_ddg_query(query)
+        results = None
         try:
             stderr = sys.stderr
             sys.stderr = open(os.devnull, "w")
@@ -217,12 +235,15 @@ class BlogWriter:
             finally:
                 sys.stderr.close()
                 sys.stderr = stderr
-        except Exception as e:
-            print(f"Error during web search for '{query}': {e}")
+        except Exception:
+            pass
+
+        if not results:
+            print(f"Warning: web search returned no results for: {query[:80]}")
             return []
 
         return [
             {"title": r.get("title", ""), "url": r.get("href", ""), "body": r.get("body", "")}
-            for r in (results or [])
+            for r in results
         ]
 

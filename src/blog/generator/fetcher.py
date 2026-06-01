@@ -10,6 +10,7 @@ import sys
 
 import httpx
 import trafilatura
+from ddgs import DDGS
 
 _FETCH_MAX_CHARS = 2000
 _SEARCH_MIN_CHARS = 200
@@ -68,7 +69,8 @@ class ContentFetcher:
 
     def search_fallback(self, title: str, tags: list[str]) -> str:
         """DuckDuckGo search using title + top 2 tags. Returns concatenated snippets."""
-        query = f'"{title}" {" ".join(tags[:2])}'.strip()
+        query = f'{title} {" ".join(tags[:2])}'.strip()
+        results = None
         try:
             stderr = sys.stderr
             sys.stderr = open(os.devnull, "w")
@@ -78,11 +80,15 @@ class ContentFetcher:
                 sys.stderr.close()
                 sys.stderr = stderr
         except Exception:
+            pass
+
+        if not results:
+            print(f"Warning: web search returned no results for: {query[:80]}")
             return ""
 
         snippets = [
             f"{r.get('title', '')} {r.get('body', '')}".strip()
-            for r in (results or [])
+            for r in results
             if r.get("title") or r.get("body")
         ]
         return " ".join(snippets)

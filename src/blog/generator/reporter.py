@@ -12,8 +12,23 @@ def _write_ranking_results(
     profiles_scored: dict,
     items_total: int,
     max_posts: int,
+    ai_title_maps: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Regenerate ranking_results.md from the current run's scoring data."""
+    _maps = ai_title_maps or {}
+
+    def _title(item_id: str, raw_title: str, preferred_profile: str | None = None) -> str:
+        """Return AI-generated headline if available, else raw source title."""
+        if preferred_profile and preferred_profile in _maps:
+            t = _maps[preferred_profile].get(item_id)
+            if t:
+                return _clean_title(t)
+        for tm in _maps.values():
+            t = tm.get(item_id)
+            if t:
+                return _clean_title(t)
+        return _clean_title(raw_title)
+
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     profile_names = ", ".join(profiles_scored.keys())
     lines: List[str] = []
@@ -67,7 +82,7 @@ def _write_ranking_results(
 
         for si in sorted_scored:
             row_num = row_num_map[si.item.id]
-            title = _clean_title(si.item.title).replace("|", "\\|")
+            title = _title(si.item.id, si.item.title, profile.name).replace("|", "\\|")
             color = "green" if si.included else "red"
             scores_cols = " | ".join(
                 str(si.dimension_scores.get(n, {}).get("score", "?")) for n in dim_names
@@ -107,7 +122,7 @@ def _write_ranking_results(
                 lines.append("|---|---|---|")
                 for rank, si in enumerate(path_items, 1):
                     star = " ⭐" if si.item.id in top_ids else ""
-                    lines.append(f"| {rank} | {_clean_title(si.item.title)}{star} | {si.weighted_sum:.2f} |")
+                    lines.append(f"| {rank} | {_title(si.item.id, si.item.title, profile.name)}{star} | {si.weighted_sum:.2f} |")
                 lines.append("")
 
         # Top N selected table
@@ -117,12 +132,12 @@ def _write_ranking_results(
                 lines.append("| Rank | Title | Path | WSum |")
                 lines.append("|---|---|---|---|")
                 for rank, si in enumerate(top_included, 1):
-                    lines.append(f"| {rank} | {_clean_title(si.item.title)} | {si.inclusion_path} | {si.weighted_sum:.2f} |")
+                    lines.append(f"| {rank} | {_title(si.item.id, si.item.title, profile.name)} | {si.inclusion_path} | {si.weighted_sum:.2f} |")
             else:
                 lines.append("| Rank | Title | WSum |")
                 lines.append("|---|---|---|")
                 for rank, si in enumerate(top_included, 1):
-                    lines.append(f"| {rank} | {_clean_title(si.item.title)} | {si.weighted_sum:.2f} |")
+                    lines.append(f"| {rank} | {_title(si.item.id, si.item.title, profile.name)} | {si.weighted_sum:.2f} |")
             lines.append("")
 
         lines.append("---\n")
@@ -151,7 +166,7 @@ def _write_ranking_results(
         lines.append(_row(
             "Top item",
             lambda p, s: (
-                lambda top: f"{_clean_title(top.item.title)} ({top.weighted_sum:.2f})" if top else "—"
+                lambda top: f"{_title(top.item.id, top.item.title, p.name)} ({top.weighted_sum:.2f})" if top else "—"
             )(next(iter(sorted([si for si in s if si.included], key=lambda x: x.weighted_sum, reverse=True)), None)),
         ))
         lines.append("")
@@ -182,7 +197,9 @@ def _write_ranking_results(
             lines.append(f"| Title | {wsums_header} | {path_header} |")
             lines.append("|" + "|".join(["---"] * (1 + len(profile_list) * 2)) + "|")
             for iid in passing_all:
-                title = _clean_title(id_to_si[iid][profile_list[0][0].name].item.title)
+                first_profile = profile_list[0][0].name
+                si_first = id_to_si[iid][first_profile]
+                title = _title(iid, si_first.item.title)
                 wsums = " | ".join(f"{id_to_si[iid][p.name].weighted_sum:.2f}" for p, _ in profile_list)
                 paths = " | ".join(id_to_si[iid][p.name].inclusion_path or "—" for p, _ in profile_list)
                 lines.append(f"| {title} | {wsums} | {paths} |")
@@ -207,7 +224,7 @@ def _write_ranking_results(
                 lines.append("|" + "|".join(["---"] * (3 + len(other_profiles))) + "|")
                 for iid in exclusive:
                     si_f = id_to_si[iid][p_focus.name]
-                    title = _clean_title(si_f.item.title)
+                    title = _title(iid, si_f.item.title, p_focus.name)
                     excl_reasons = []
                     for p_other, _ in other_profiles:
                         si_other = id_to_si.get(iid, {}).get(p_other.name)
@@ -231,8 +248,7 @@ def _write_run_log(scored_items: List[ScoredItem], profile_name: str) -> str:
     """Persist full scoring details to artifacts/blog-runs/YYYY-MM-DD-{profile}.json."""
     log_dir = Path("artifacts/blog-runs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    log_path = log_dir / f"{today}-{profile_name}.json"
+    log_path = log_dir / f"{profile_name}.json"
 
     results = []
     for idx, si in enumerate(scored_items, 1):
@@ -257,5 +273,5 @@ def _write_run_log(scored_items: List[ScoredItem], profile_name: str) -> str:
         "results": results,
     }
     log_path.write_text(json.dumps(log_data, indent=2, ensure_ascii=False), encoding="utf-8")
-    console_path = f"artifacts/blog-runs/{today}-{profile_name}.json"
+    console_path = f"artifacts/blog-runs/{profile_name}.json"
     return console_path

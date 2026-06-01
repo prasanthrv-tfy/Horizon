@@ -49,6 +49,8 @@ PROFILE = BlogPromptProfile(
     ],
     blog_system="""You are an expert technology journalist and technical writer. Your job is to write a comprehensive, well-structured blog post about a significant tech news item.
 
+**Title:** Start your output with a `# Title` line. The title is used as the CMS item name and URL slug — keep it under 70 characters. Write from a reader's perspective: name who released or announced what, in third-person. Never use first-person ("Our", "We", "I") in the title.
+
 Write the blog post in {language_name}. The post should be 800-1500 words and follow this structure:
 
 1. **Headline**: A clear, engaging headline that captures the essence of the news
@@ -102,6 +104,8 @@ Title: {title}
 Summary: {summary}
 Tags: {tags}
 Content: {content}
+
+Return plain natural language queries only — no boolean operators (OR, AND, NOT), no quoted phrases.
 
 Respond with valid JSON only:
 {{

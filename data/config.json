@@ -105,6 +105,84 @@
         "url": "https://simonwillison.net/atom/everything/",
         "enabled": true,
         "category": "ai-tools"
+      },
+      {
+        "name": "Hugging Face Blog",
+        "url": "https://huggingface.co/blog/feed.xml",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "Lil'Log (Lilian Weng)",
+        "url": "https://lilianweng.github.io/index.xml",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Google DeepMind Blog",
+        "url": "https://deepmind.google/blog/rss.xml",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Ahead of AI (Sebastian Raschka)",
+        "url": "https://magazine.sebastianraschka.com/feed",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Chip Huyen's Blog",
+        "url": "https://huyenchip.com/feed",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "Engineering at Meta — AI Research",
+        "url": "https://engineering.fb.com/category/ai-research/feed/",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Eugene Yan",
+        "url": "https://eugeneyan.com/rss/",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "The Gradient",
+        "url": "https://thegradient.pub/rss",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "Weights & Biases (Fully Connected)",
+        "url": "https://wandb.ai/fully-connected/rss.xml",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "arXiv cs.CL (Computation and Language)",
+        "url": "https://arxiv.org/rss/cs.CL",
+        "enabled": false,
+        "category": "ai-research"
+      },
+      {
+        "name": "Cohere Blog",
+        "url": "https://cohere.com/blog/rss.xml",
+        "enabled": true,
+        "category": "ai-engineering"
+      },
+      {
+        "name": "Mistral AI News",
+        "url": "https://any-feeds.com/api/feeds/custom/cmpushfea0023jo04qeewhvns/rss.xml",
+        "enabled": true,
+        "category": "ai-research"
+      },
+      {
+        "name": "xAI News",
+        "url": "https://any-feeds.com/api/feeds/custom/cmpusextd0000jo04gehn62ju/rss.xml",
+        "enabled": true,
+        "category": "ai-research"
       }
     ],
     "reddit": {
@@ -131,7 +209,7 @@
     }
   },
   "filtering": {
-    "ai_score_threshold": 8.0,
+    "ai_score_threshold": 7.0,
     "time_window_hours": 1080,
     "topics": [
       "AI",

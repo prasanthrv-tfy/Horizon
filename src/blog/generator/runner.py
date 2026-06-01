@@ -9,7 +9,7 @@ import asyncio
 import json
 import re
 import sys
-from datetime import datetime, timezone
+
 from pathlib import Path
 from typing import List
 
@@ -39,11 +39,14 @@ async def generate_and_save_posts(
     profile: BlogPromptProfile,
     console: Console,
     blog_scores: dict[str, float] | None = None,
-) -> None:
-    """Generate blog posts for one profile and write them to disk."""
+) -> dict[str, str]:
+    """Generate blog posts for one profile and write them to disk.
+
+    Returns a mapping of item_id -> AI-generated headline for use in ranking results.
+    """
     if not items:
         console.print("[yellow]No items to process — skipping blog generation.[/yellow]")
-        return
+        return {}
 
     blog_cfg = config.blog or BlogConfig()
     gen_cfg = blog_cfg.generator
@@ -56,46 +59,46 @@ async def generate_and_save_posts(
     )
     languages = list(config.ai.languages)
 
-    console.print(
-        f"📝 [{profile.name}] Generating blog posts for {len(items)} items in {languages}..."
-    )
-    posts_by_lang = await writer.generate_blog_posts(items, languages)
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_dir = Path(gen_cfg.output_dir) / profile.name
     archive_dir.mkdir(parents=True, exist_ok=True)
 
+    console.print(
+        f"📝 [{profile.name}] Generating blog posts for {len(items)} items in {languages}..."
+    )
+
+    ai_titles: dict[str, str] = {}
     manifest: list[dict] = []
-    for lang, posts in posts_by_lang.items():
-        for post in posts:
-            safe = re.sub(r'[^\w\s-]', '', post.title.lower())
-            safe = re.sub(r'[\s_]+', '-', safe).strip('-')[:60]
-            filename = f"{today}-{safe}-{lang}.md"
-            archive_path = archive_dir / filename
-            archive_path.write_text(post.markdown, encoding="utf-8")
+    counts: dict[str, int] = {}
+    async for lang, post in writer.generate_blog_posts(items, languages):
+        safe = re.sub(r'[^\w\s-]', '', post.title.lower())
+        safe = re.sub(r'[\s_]+', '-', safe).strip('-')[:60]
+        filename = f"{safe}-{lang}.md"
+        archive_path = archive_dir / filename
+        archive_path.write_text(post.markdown, encoding="utf-8")
 
-            score = blog_scores.get(post.item_id, post.score) if blog_scores else post.score
-            manifest.append({
-                "item_id": post.item_id,
-                "title": post.title,
-                "score": score,
-                "tags": post.tags,
-                "url": post.url,
-                "published_at": post.published_at,
-                "language": lang,
-                "profile": profile.name,
-                "filename": filename,
-            })
+        ai_titles[post.item_id] = post.title
+        counts[lang] = counts.get(lang, 0) + 1
 
-        console.print(
-            f"   {lang.upper()}: {len(posts)} posts → {archive_dir}/"
-        )
+        score = blog_scores.get(post.item_id, post.score) if blog_scores else post.score
+        manifest.append({
+            "item_id": post.item_id,
+            "title": post.title,
+            "score": score,
+            "tags": post.tags,
+            "url": post.url,
+            "published_at": post.published_at,
+            "language": lang,
+            "profile": profile.name,
+            "filename": filename,
+        })
 
     manifest_path = archive_dir / "posts.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    total = sum(len(p) for p in posts_by_lang.values())
-    console.print(f"   Total: {total} blog posts generated\n")
+    for lang, count in counts.items():
+        console.print(f"   {lang.upper()}: {count} posts → {archive_dir}/")
+    console.print(f"   Total: {sum(counts.values())} blog posts generated\n")
+    return ai_titles
 
 
 async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str | None = None, all_posts: bool = False, max_posts_arg: int | None = None) -> None:
@@ -139,6 +142,7 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         profile_name = profile_arg or gen_cfg.profile
         profiles = resolve_profiles(profile_name)
         profiles_scored: dict = {}
+        ai_title_maps: dict[str, dict[str, str]] = {}
         for profile in profiles:
             if pinned_items is not None:
                 selected = pinned_items
@@ -172,10 +176,12 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
             if rank_only:
                 continue
 
-            await generate_and_save_posts(selected, config, profile, console, blog_scores)
+            titles = await generate_and_save_posts(selected, config, profile, console, blog_scores)
+            if titles:
+                ai_title_maps[profile.name] = titles
 
         if profiles_scored:
-            _write_ranking_results(profiles_scored, len(items), max_posts)
+            _write_ranking_results(profiles_scored, len(items), max_posts, ai_title_maps)
             console.print("📊 ranking_results.md updated\n")
     finally:
         (LOGS_DIR / "plain").mkdir(parents=True, exist_ok=True)

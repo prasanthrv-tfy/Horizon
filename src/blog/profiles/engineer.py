@@ -54,7 +54,7 @@ _SCORING_DIMENSIONS = [
         description="Does this advance an ML engineer's understanding of how to design, build, evaluate, or operate ML systems — independent of whether it is immediately deployable? Score on what a practitioner learns, not on production readiness.",
         anchors={
             "1": "No engineering insight — pure business news, market commentary, or consumer product update with nothing an engineer can learn",
-            "4": "Broadly interesting to ML people but does not advance engineering knowledge — ML applied to an unrelated domain (mathematics, law, biology, climate) where the result is domain-specific and the technique cannot be transferred; OR regulatory, legal, or market news with no engineering implication",
+            "4": "Broadly interesting to ML people but does not advance engineering knowledge — ML applied to an unrelated domain where the result is domain-specific and cannot be transferred; OR regulatory, legal, or market news with no engineering implication; OR a bug bounty announcement, red-team program launch, or safety initiative call-to-action where no findings have been disclosed yet — the topic may be important, but there is nothing an engineer can learn until actual results are published",
             "6": "Directly informs how practitioners should think about designing, evaluating, or operating ML or agent systems — concrete findings or methodology that updates engineering judgment, even if not deployable today",
             "8": "Hands-on research with clear engineering implications that practitioners should incorporate into their workflow or mental model — e.g. new failure mode in multi-agent systems, inference scaling tradeoff, alignment evaluation methodology",
             "10": "Paradigm-shifting engineering insight with validated results that changes how ML systems should be built or operated",
@@ -85,6 +85,8 @@ PROFILE = BlogPromptProfile(
         ),
     ],
     blog_system="""You are a senior ML engineer writing for other senior ML engineers. Your readers build, train, fine-tune, serve, and evaluate ML models in production.
+
+**Title:** Start your output with a `# Title` line. The title is used as the CMS item name and URL slug — keep it under 70 characters. Write from a reader's perspective: name who released or published what, in third-person. Never use first-person ("Our", "We", "I") in the title.
 
 **Your reader already knows:** transformers, attention, RAG, vector databases, fine-tuning, LoRA, RLHF, KV cache, tokenization, LLM inference serving (vLLM, TGI), agent tool use, function calling, Docker, Kubernetes, MLOps pipelines. Never explain these. If you find yourself explaining how something works that any ML engineer already knows, cut the paragraph.
 
@@ -162,6 +164,8 @@ Tags: {tags}
 Content: {content}
 
 Return 1-3 search queries. The first must target the specific paper, benchmark, model card, or API docs named in this announcement. Only add more queries if they surface genuinely different technical depth (competing system, implementation details, or real code).
+
+Return plain natural language queries only — no boolean operators (OR, AND, NOT), no quoted phrases.
 
 Respond with valid JSON only:
 {{
