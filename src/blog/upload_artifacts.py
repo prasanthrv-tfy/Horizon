@@ -37,7 +37,7 @@ async def _run(console: Console, ml_repo: str, as_zip: bool) -> None:
         console.print("[red]✗ truefoundry is not installed. Run: uv sync --extra upload[/red]")
         sys.exit(1)
 
-    date_str = datetime.now().strftime("%d-%b-%Y")
+    date_str = datetime.now().strftime("%d-%b-%Y-%H%M")
 
     if not ARTIFACTS_DIR.exists():
         console.print(f"[red]✗ Artifacts directory not found: {ARTIFACTS_DIR}[/red]")
