@@ -1,4 +1,4 @@
-name: Daily Horizon Pipeline
+name: News-Generation-Pipeline
 
 on:
   schedule:
