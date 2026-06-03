@@ -163,6 +163,8 @@ Content: {content}
 
 Return 1-3 search queries. The first must target the specific paper, benchmark, model card, or API docs named in this announcement. Only add more queries if they surface genuinely different technical depth (competing system, implementation details, or real code).
 
+Keep each query short (under 8 words).
+
 Return plain natural language queries only — no boolean operators (OR, AND, NOT), no quoted phrases.
 
 Respond with valid JSON only:

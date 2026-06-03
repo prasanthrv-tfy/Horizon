@@ -7,6 +7,7 @@ Run `uv run horizon` first to produce that file, then `uv run horizon-blog`.
 import argparse
 import asyncio
 import json
+import random
 import re
 import sys
 
@@ -162,7 +163,22 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
                     key=lambda si: si.weighted_sum,
                     reverse=True,
                 )
-                included_slice = included if max_posts is None else included[:max_posts]
+                if max_posts is None:
+                    included_slice = included
+                else:
+                    path_buckets: dict[str, list] = {}
+                    for si in included:
+                        key = si.inclusion_path or ""
+                        if key not in path_buckets:
+                            path_buckets[key] = []
+                        path_buckets[key].append(si)
+                    if len(path_buckets) <= 1:
+                        included_slice = included[:max_posts]
+                    else:
+                        pool: list = []
+                        for bucket in path_buckets.values():
+                            pool.extend(bucket[:max_posts])
+                        included_slice = random.sample(pool, min(max_posts, len(pool)))
                 blog_scores = {si.item.id: si.weighted_sum for si in included_slice}
                 scored_map = {si.item.id: si for si in included_slice}
                 selected = [si.item for si in included_slice]

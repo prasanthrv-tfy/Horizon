@@ -105,6 +105,8 @@ Summary: {summary}
 Tags: {tags}
 Content: {content}
 
+Keep each query short (under 8 words).
+
 Return plain natural language queries only — no boolean operators (OR, AND, NOT), no quoted phrases.
 
 Respond with valid JSON only:
