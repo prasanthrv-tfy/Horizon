@@ -20,9 +20,10 @@ on:
       ANTHROPIC_API_KEY: { required: false }
       GOOGLE_API_KEY:    { required: false }
       LWN_KEY:           { required: false }
-      TFY_BASE_URL:      { required: false }
-      TFY_API_KEY:       { required: false }
-      WEBFLOW_TOKEN:     { required: false }
+      TFY_BASE_URL:      { required: true }
+      TFY_API_KEY:       { required: true }
+      WEBFLOW_TOKEN:     { required: true }
+      ARTIFACTS_ML_REPO: { required: true }
 
   workflow_dispatch:
     inputs:
@@ -70,6 +71,7 @@ jobs:
           TFY_BASE_URL: ${{ secrets.TFY_BASE_URL }}
           TFY_API_KEY: ${{ secrets.TFY_API_KEY }}
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
+          ARTIFACTS_ML_REPO: ${{ secrets.ARTIFACTS_ML_REPO }}
         run: |
           bash scripts/run-pipeline.sh \
             --hours "${{ inputs.hours || '24' }}" \
