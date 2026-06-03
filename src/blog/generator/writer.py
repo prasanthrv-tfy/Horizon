@@ -127,7 +127,7 @@ class BlogWriter:
         for r in all_results:
             if r.get("url"):
                 sources_list.append(r["url"])
-        sources = "\n".join(f"- {u}" for u in sources_list)
+        sources = "\n".join(f"- [{u}]({u})" for u in sources_list)
 
         comments_section = f"\n**Community Comments:**\n{comments_text}\n" if comments_text else ""
         language_name = LANGUAGE_NAMES.get(language, language)

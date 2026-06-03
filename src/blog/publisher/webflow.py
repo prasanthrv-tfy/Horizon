@@ -3,6 +3,26 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+_SOURCES_RE = re.compile(
+    r'(<h[2-4][^>]*>[Ss]ources</h[2-4]>)\s*<ul>(.*?)</ul>',
+    re.DOTALL,
+)
+
+
+def _reformat_sources(html: str) -> str:
+    """Convert the Sources <ul>/<li> block to <p> elements.
+
+    Webflow's Rich Text API sanitizer strips <li> whose only content is an <a>
+    element, which is the exact pattern every Sources section uses. Converting
+    to <p> tags preserves the links.
+    """
+    def _replace(m: re.Match) -> str:
+        heading = m.group(1)
+        items = re.findall(r'<li>(.*?)</li>', m.group(2), re.DOTALL)
+        paragraphs = ''.join(f'<p>{item.strip()}</p>' for item in items)
+        return heading + paragraphs
+    return _SOURCES_RE.sub(_replace, html)
+
 import httpx
 
 from .publisher import Publisher
@@ -58,7 +78,7 @@ class WebflowPublisher(Publisher):
                 "slug": slug,
                 "meta-title": item.get("seo_title", title)[:60],
                 "meta-description": item.get("seo_description", "")[:160],
-                "content": item.get("html", ""),
+                "content": _reformat_sources(item.get("html", "")),
                 "published-date": item.get("published_at", ""),
                 "min-read": item.get("reading_time", "1 min read"),
                 "featured-on-top": "false",
