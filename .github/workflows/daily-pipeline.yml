@@ -1,0 +1,51 @@
+name: Daily Horizon Pipeline
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # midnight UTC daily
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Look-back window in hours'
+        default: '24'
+      profile:
+        description: 'Blog profile (engineer / news / all)'
+        default: 'engineer'
+      dry_run:
+        description: 'Skip Webflow publish step'
+        type: boolean
+        default: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run pipeline
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          LWN_KEY: ${{ secrets.LWN_KEY }}
+          TFY_BASE_URL: ${{ secrets.TFY_BASE_URL }}
+          TFY_API_KEY: ${{ secrets.TFY_API_KEY }}
+          WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
+        run: |
+          bash scripts/run-pipeline.sh \
+            --hours "${{ inputs.hours || '24' }}" \
+            --profile "${{ inputs.profile || 'engineer' }}" \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}

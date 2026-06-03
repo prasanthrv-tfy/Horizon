@@ -25,3 +25,6 @@ class Publisher(ABC):
     @abstractmethod
     async def delete_item(self, item_id: str) -> None:
         """Remove an item from the collection."""
+
+    async def aclose(self) -> None:
+        """Release any underlying HTTP client resources. Override if needed."""

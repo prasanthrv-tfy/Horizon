@@ -7,10 +7,12 @@ Run `uv run horizon` first to produce that file, then `uv run horizon-blog`.
 import argparse
 import asyncio
 import json
+import os
 import random
 import re
 import sys
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
 
@@ -25,6 +27,8 @@ from .loader import _clean_title, load_important_items, resolve_profiles
 from src.blog.models import BlogConfig
 from src.blog.profiles import PROFILES
 from src.blog.profiles.profile import BlogPromptProfile
+from src.blog.publisher import create_publisher
+from src.blog.publisher.deduplicator import batch_semantic_dedup
 from .reporter import _write_ranking_results, _write_run_log
 from .scorer import rank_by_relevance, score_items_for_profile
 from .writer import BlogWriter
@@ -106,6 +110,66 @@ async def generate_and_save_posts(
     return ai_titles
 
 
+async def _prefilter_duplicates(
+    items: List[ContentItem],
+    config: Config,
+    ai_client,
+    console: Console,
+) -> List[ContentItem]:
+    """Remove items already covered by recently published Webflow posts.
+
+    Skips silently if WEBFLOW_TOKEN or collection_id is absent. Fails open on any error.
+    """
+    token = os.environ.get("WEBFLOW_TOKEN")
+    blog_cfg = config.blog
+    publisher_cfg = blog_cfg.publisher if blog_cfg else None
+    collection_id = publisher_cfg.collection_id if publisher_cfg else ""
+
+    if not token or not collection_id or publisher_cfg is None:
+        return items
+
+    dedup_days = publisher_cfg.deduplication_time_window
+    since = datetime.now(tz=timezone.utc) - timedelta(days=dedup_days)
+
+    try:
+        publisher = create_publisher(publisher_cfg, token)
+        console.print(f"🔍 Pre-filter: fetching Webflow items published in the last {dedup_days} day(s)...")
+        webflow_items = await publisher.list_items(since=since)
+        await publisher.aclose()
+
+        existing_for_dedup = [
+            {
+                "title": item.get("fieldData", {}).get("name", ""),
+                "description": item.get("fieldData", {}).get("meta-description", ""),
+            }
+            for item in webflow_items
+            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("meta-description")
+        ]
+
+        source_for_dedup = [
+            {
+                "id": item.id,
+                "title": item.title,
+                "summary": item.ai_summary or "",
+            }
+            for item in items
+        ]
+
+        console.print(f"   Checking {len(items)} candidate(s) against {len(existing_for_dedup)} published post(s)...")
+        duplicate_ids = await batch_semantic_dedup(source_for_dedup, existing_for_dedup, ai_client)
+
+        if duplicate_ids:
+            filtered = [item for item in items if item.id not in duplicate_ids]
+            console.print(f"   Pre-filter removed {len(duplicate_ids)} duplicate(s), {len(filtered)} candidate(s) remain.\n")
+            return filtered
+
+        console.print(f"   No duplicates found — all {len(items)} candidate(s) proceed to scoring.\n")
+        return items
+    except Exception as exc:
+        console.print(f"[yellow]⚠️  Pre-filter skipped (Webflow query failed: {exc})[/yellow]\n")
+        return items
+
+
 async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str | None = None, all_posts: bool = False, max_posts_arg: int | None = None) -> None:
     load_dotenv()
     console = Console(record=True)
@@ -143,6 +207,12 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         ai_client = create_ai_client(config.ai)
 
         await enrich_thin_items(items, console)
+
+        if pinned_items is None:
+            items = await _prefilter_duplicates(items, config, ai_client, console)
+            if not items:
+                console.print("[yellow]⚠️  All candidates are duplicates of recently published posts — nothing to generate.[/yellow]\n")
+                return
 
         profile_name = profile_arg or gen_cfg.profile
         profiles = resolve_profiles(profile_name)

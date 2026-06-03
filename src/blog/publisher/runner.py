@@ -16,11 +16,11 @@ from rich.console import Console
 
 from src.ai.client import create_ai_client
 from src.storage.manager import StorageManager
+from . import create_publisher
 from .deduplicator import deduplicate_posts, semantic_is_duplicate
 from .converter import wrap_html
 from .loader import load_manifest, load_post
 from .seo import generate_seo
-from .webflow import WebflowPublisher
 
 BLOG_POSTS_DIR = Path("artifacts/blog-posts")
 DUMP_HTML_DIR = Path("artifacts/webflow_content")
@@ -82,7 +82,7 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
     since = datetime.now(tz=timezone.utc) - timedelta(days=dedup_days)
 
     ai_client = create_ai_client(config.ai)
-    publisher = WebflowPublisher(token=token, collection_id=collection_id)
+    publisher = create_publisher(publisher_cfg, token)
 
     try:
         t0 = datetime.now(tz=timezone.utc)

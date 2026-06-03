@@ -210,7 +210,7 @@
   },
   "filtering": {
     "ai_score_threshold": 7.0,
-    "time_window_hours": 1080,
+    "time_window_hours": 24,
     "topics": [
       "AI",
       "machine learning",
@@ -226,7 +226,7 @@
     },
     "publisher": {
       "collection_id": "69fdb1f79e0eefe055360e10",
-      "max_drafts": 1
+      "max_drafts": 4
     }
   }
 }

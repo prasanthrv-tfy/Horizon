@@ -11,7 +11,7 @@ LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 
 # Defaults
 HOURS=24
-PROFILE="all"
+PROFILE="engineer"
 DRY_RUN=false
 
 # Parse args
