@@ -211,10 +211,10 @@ cp data/config.example.json data/config.json
 # Edit .env and data/config.json with your API keys and preferences
 
 # Run with Docker Compose
-docker-compose run --rm horizon
+docker compose run --rm horizon
 
 # Or run with custom time window
-docker-compose run --rm horizon --hours 48
+docker compose run --rm horizon --hours 48
 ```
 
 ### 2. Configure
@@ -254,6 +254,25 @@ Minimal manual configuration:
 }
 ```
 
+`api_key_env` must be the name of an environment variable, not the API key
+itself. Put the real secret in `.env`:
+
+```bash
+OPENAI_API_KEY=sk-your-key
+```
+
+For Gemini, use `GOOGLE_API_KEY`:
+
+```jsonc
+{
+  "ai": {
+    "provider": "gemini",
+    "model": "gemini-2.0-flash",
+    "api_key_env": "GOOGLE_API_KEY"
+  }
+}
+```
+
 Any string value in `data/config.json` can reference environment variables with `${VAR_NAME}`. This is useful for values such as `ai.base_url`, private RSS feed URLs, webhook endpoints, or custom header templates.
 
 For the full reference, see the [Configuration Guide](docs/configuration.md).
@@ -270,8 +289,8 @@ uv run horizon --hours 48  # Fetch from last 48 hours
 #### With Docker
 
 ```bash
-docker-compose run --rm horizon           # Run with default 24h window
-docker-compose run --rm horizon --hours 48  # Fetch from last 48 hours
+docker compose run --rm horizon           # Run with default 24h window
+docker compose run --rm horizon --hours 48  # Fetch from last 48 hours
 ```
 
 The generated report will be saved to `data/summaries/`.
@@ -304,6 +323,14 @@ Horizon can publish or deliver the generated briefing in several ways:
 | **MCP Server** | Exposes Horizon pipeline steps as tools so AI assistants can fetch, score, filter, enrich, summarize, and run the full workflow |
 
 For setup details, see the [Configuration Guide](docs/configuration.md). For MCP tool references and client setup, see [`src/mcp/README.md`](src/mcp/README.md) and [`src/mcp/integration.md`](src/mcp/integration.md).
+
+## Supported By
+
+Horizon is an open-source project maintained in spare time. If you'd like to support the project or be listed here, feel free to [open an issue](https://github.com/Thysrael/Horizon/issues/new) or [email me](mailto:thysrael@163.com).
+
+| Supporter | Details |
+|-----------|---------|
+| [<img src="docs/assets/compshare-logo.png" alt="Compshare / 优云智算" width="220" />](https://www.compshare.cn/?ytag=GPU_YY_git_Horizon) | Compshare currently supports Horizon. Compshare is UCloud's AI cloud platform, offering cost-effective monthly and pay-as-you-go domestic model agent plans starting from RMB 49/month, as well as stable officially relayed overseas models. It supports Claude Code, Codex, and API usage, with enterprise-grade high concurrency, 24/7 technical support, and self-service invoicing.<br><br>Register through their [link](https://www.compshare.cn/?ytag=GPU_YY_git_Horizon) to receive a free RMB 5 trial credit. |
 
 ## Documentation
 

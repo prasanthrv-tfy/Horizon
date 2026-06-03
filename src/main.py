@@ -54,11 +54,16 @@ def main():
             config = storage.load_config()
         except FileNotFoundError:
             console.print("[bold red]❌ Configuration file not found![/bold red]\n")
+            data_dir_path = data_dir if isinstance(data_dir, Path) else Path(data_dir)
+            example_path = data_dir_path / "config.example.json"
+            if example_path.exists():
+                console.print(
+                    f"Copy the example config and edit it:\n"
+                    f"  [cyan]cp {example_path} {data_dir_path / 'config.json'}[/cyan]\n"
+                )
             console.print(
-                "Run [bold cyan]uv run horizon-wizard[/bold cyan] to launch the interactive setup wizard,\n"
-                "or create [cyan]data/config.json[/cyan] manually based on the template:\n"
+                "Or run [bold cyan]uv run horizon-wizard[/bold cyan] to launch the interactive setup wizard.\n"
             )
-            print_config_template()
             sys.exit(1)
         except ConfigError as e:
             console.print(f"[bold red]❌ Error loading configuration: {e}[/bold red]")

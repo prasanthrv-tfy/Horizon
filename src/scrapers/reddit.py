@@ -1,15 +1,24 @@
 """Reddit scraper implementation."""
 
 import asyncio
+import calendar
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from email.utils import parsedate_to_datetime
+from typing import Any, List, Optional, cast
 
+import feedparser
 import httpx
 
 from .base import BaseScraper
-from ..models import ContentItem, RedditConfig, RedditSubredditConfig, RedditUserConfig, SourceType
+from ..models import (
+    ContentItem,
+    RedditConfig,
+    RedditSubredditConfig,
+    RedditUserConfig,
+    SourceType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +35,10 @@ REDDIT_HEADERS = {
     "Referer": f"{REDDIT_BASE}/",
 }
 MAX_COMMENT_CONCURRENCY = 2
+
+
+class RedditBlockedError(Exception):
+    """Raised when Reddit blocks an unauthenticated JSON listing request."""
 
 
 class RedditScraper(BaseScraper):
@@ -60,31 +73,108 @@ class RedditScraper(BaseScraper):
                 items.extend(result)
         return items
 
-    async def _fetch_subreddit(self, cfg: RedditSubredditConfig, since: datetime) -> List[ContentItem]:
-        params = {"limit": min(cfg.fetch_limit, 100), "raw_json": 1}
+    async def _fetch_subreddit(
+        self, cfg: RedditSubredditConfig, since: datetime
+    ) -> List[ContentItem]:
+        params: dict[str, Any] = {"limit": min(cfg.fetch_limit, 100), "raw_json": 1}
         if cfg.sort in ("top", "controversial"):
             params["t"] = cfg.time_filter
 
         url = f"{REDDIT_BASE}/r/{cfg.subreddit}/{cfg.sort}.json"
-        data = await self._reddit_get(url, params)
+        try:
+            data = await self._reddit_get(url, params)
+        except RedditBlockedError:
+            logger.warning(
+                "Reddit blocked JSON listing for r/%s; falling back to RSS",
+                cfg.subreddit,
+            )
+            return await self._fetch_subreddit_rss(cfg, since)
         if not data:
             return []
 
-        posts = [child["data"] for child in data.get("data", {}).get("children", [])
-                 if child.get("kind") == "t3"]
+        posts = [
+            child["data"]
+            for child in data.get("data", {}).get("children", [])
+            if child.get("kind") == "t3"
+        ]
         return await self._process_posts(
             posts, since, "subreddit", cfg.subreddit, cfg.min_score
         )
 
-    async def _fetch_user(self, cfg: RedditUserConfig, since: datetime) -> List[ContentItem]:
-        params = {"limit": min(cfg.fetch_limit, 100), "sort": cfg.sort, "raw_json": 1}
+    async def _fetch_subreddit_rss(
+        self, cfg: RedditSubredditConfig, since: datetime
+    ) -> List[ContentItem]:
+        rss_url = f"{REDDIT_BASE}/r/{cfg.subreddit}/{cfg.sort}/.rss"
+
+        try:
+            response = await self.client.get(
+                rss_url,
+                headers={
+                    **REDDIT_HEADERS,
+                    "Accept": "application/atom+xml,application/xml,text/xml,*/*",
+                },
+                follow_redirects=True,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.warning("Reddit RSS fallback failed for r/%s: %s", cfg.subreddit, e)
+            return []
+
+        feed = feedparser.parse(response.text)
+        items = []
+        for entry in feed.entries[: cfg.fetch_limit]:
+            published_at = self._parse_rss_date(entry)
+            if not published_at or published_at < since:
+                continue
+
+            entry_id = str(
+                entry.get("id") or entry.get("link") or entry.get("title", "")
+            )
+            title = str(entry.get("title") or "Untitled")
+            link = str(entry.get("link") or f"{REDDIT_BASE}/r/{cfg.subreddit}/")
+            content = self._strip_html(str(entry.get("summary") or ""))
+
+            items.append(
+                ContentItem(
+                    id=self._generate_id("reddit", "subreddit-rss", entry_id),
+                    source_type=SourceType.REDDIT,
+                    title=title,
+                    url=cast(Any, link),
+                    content=content,
+                    author=str(entry.get("author") or "unknown"),
+                    published_at=published_at,
+                    metadata={
+                        "score": None,
+                        "upvote_ratio": None,
+                        "num_comments": None,
+                        "subreddit": cfg.subreddit,
+                        "is_self": None,
+                        "flair": None,
+                        "discussion_url": link,
+                        "fallback": "rss",
+                    },
+                )
+            )
+        return items
+
+    async def _fetch_user(
+        self, cfg: RedditUserConfig, since: datetime
+    ) -> List[ContentItem]:
+        params: dict[str, Any] = {
+            "limit": min(cfg.fetch_limit, 100),
+            "sort": cfg.sort,
+            "raw_json": 1,
+        }
         url = f"{REDDIT_BASE}/user/{cfg.username}/submitted.json"
         data = await self._reddit_get(url, params)
         if not data:
             return []
 
-        posts = [child["data"] for child in data.get("data", {}).get("children", [])
-                 if child.get("kind") == "t3"]
+        posts = [
+            child["data"]
+            for child in data.get("data", {}).get("children", [])
+            if child.get("kind") == "t3"
+        ]
         return await self._process_posts(
             posts, since, "user", cfg.username, min_score=0
         )
@@ -102,7 +192,9 @@ class RedditScraper(BaseScraper):
         fetch_comments = self.reddit_config.fetch_comments
 
         for post in posts:
-            created = datetime.fromtimestamp(post.get("created_utc", 0), tz=timezone.utc)
+            created = datetime.fromtimestamp(
+                post.get("created_utc", 0), tz=timezone.utc
+            )
             if created < since:
                 continue
             if post.get("score", 0) < min_score:
@@ -124,7 +216,7 @@ class RedditScraper(BaseScraper):
         for post, comments in zip(valid_posts, all_comments):
             if isinstance(comments, Exception):
                 comments = []
-            item = self._parse_post(post, comments, subtype)
+            item = self._parse_post(post, cast(List[dict], comments), subtype)
             if item:
                 items.append(item)
         return items
@@ -132,6 +224,29 @@ class RedditScraper(BaseScraper):
     @staticmethod
     async def _empty_comments() -> List[dict]:
         return []
+
+    @staticmethod
+    def _parse_rss_date(entry: dict) -> Optional[datetime]:
+        for field in ["published", "updated", "created"]:
+            parsed_field = f"{field}_parsed"
+            if parsed_field in entry and entry[parsed_field]:
+                return datetime.fromtimestamp(
+                    calendar.timegm(entry[parsed_field]), tz=timezone.utc
+                )
+            if field in entry:
+                try:
+                    parsed = parsedate_to_datetime(entry[field])
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    return parsed
+                except Exception:
+                    continue
+        return None
+
+    @staticmethod
+    def _strip_html(value: str) -> str:
+        text = re.sub(r"<[^>]+>", " ", value)
+        return re.sub(r"\s+", " ", text).strip()
 
     async def _fetch_comments(self, subreddit: str, post_id: str) -> List[dict]:
         fetch_limit = self.reddit_config.fetch_comments
@@ -154,7 +269,9 @@ class RedditScraper(BaseScraper):
         comments.sort(key=lambda c: c.get("score", 0), reverse=True)
         return comments[:fetch_limit]
 
-    def _parse_post(self, post: dict, comments: List[dict], subtype: str) -> Optional[ContentItem]:
+    def _parse_post(
+        self, post: dict, comments: List[dict], subtype: str
+    ) -> Optional[ContentItem]:
         post_id = post["id"]
         title = post.get("title", "")
         is_self = post.get("is_self", False)
@@ -192,7 +309,7 @@ class RedditScraper(BaseScraper):
             id=self._generate_id("reddit", subtype, post_id),
             source_type=SourceType.REDDIT,
             title=title,
-            url=url,
+            url=cast(Any, url),
             content=content,
             author=author,
             published_at=created,
@@ -226,10 +343,17 @@ class RedditScraper(BaseScraper):
                     follow_redirects=True,
                 )
             if response.status_code == 403 and "/comments/" in url:
-                logger.info("Reddit blocked comments request for %s; continuing without comments", url)
+                logger.info(
+                    "Reddit blocked comments request for %s; continuing without comments",
+                    url,
+                )
                 return None
+            if response.status_code == 403:
+                raise RedditBlockedError(url)
             response.raise_for_status()
             return response.json()
+        except RedditBlockedError:
+            raise
         except httpx.HTTPError as e:
             logger.warning("Reddit request failed for %s: %s", url, e)
             return None

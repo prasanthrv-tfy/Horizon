@@ -11,6 +11,32 @@ Horizon is configured through two files: a `.env` file for API keys and a `data/
 
 Configure which AI model scores and summarizes your content.
 
+`api_key_env` is always an environment variable name, not the API key value.
+Store secrets in `.env` or your shell environment, then point `api_key_env` at
+that variable:
+
+```bash
+OPENAI_API_KEY=sk-your-key
+GOOGLE_API_KEY=your-gemini-key
+```
+
+When Horizon starts, environment variables have priority because
+`data/config.json` does not store the secret. For local VS Code runs, create
+`.env` in the repository root and launch Horizon from that same root directory.
+
+Common API key variable names:
+
+| Provider | `api_key_env` value |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` |
+| Gemini | `GOOGLE_API_KEY` |
+| MiniMax | `MINIMAX_API_KEY` |
+| Aliyun DashScope | `DASHSCOPE_API_KEY` |
+| Doubao | `DOUBAO_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+
 **Anthropic Claude**:
 
 ```json
@@ -32,6 +58,19 @@ Configure which AI model scores and summarizes your content.
     "provider": "openai",
     "model": "gpt-4",
     "api_key_env": "OPENAI_API_KEY",
+    "throttle_sec": 0
+  }
+}
+```
+
+**Gemini**:
+
+```json
+{
+  "ai": {
+    "provider": "gemini",
+    "model": "gemini-2.0-flash",
+    "api_key_env": "GOOGLE_API_KEY",
     "throttle_sec": 0
   }
 }
@@ -60,14 +99,14 @@ Set `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` in your `.env`. The `mode
 {
   "ai": {
     "provider": "minimax",
-    "model": "MiniMax-M2.7",
+    "model": "MiniMax-M3",
     "api_key_env": "MINIMAX_API_KEY",
     "throttle_sec": 0
   }
 }
 ```
 
-Available models: `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`
+Available models: `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`
 
 **Aliyun DashScope** (OpenAI-compatible):
 
@@ -489,6 +528,40 @@ Webhook notification is optional and disabled unless `webhook.enabled` is `true`
 - `headers`: Optional custom headers, one `Key: Value` pair per line.
 
 When `request_body` is a JSON object or array, Horizon renders placeholders and serializes it as JSON. When it is a string, Horizon renders it directly and detects JSON if the rendered string is valid JSON.
+
+### Delivery Modes And Layouts
+
+`delivery` controls how many webhook messages Horizon sends:
+
+- `summary`: Sends one message containing the full daily summary. This is simple, but some chat platforms may reject long messages.
+- `summary_and_items`: Sends one overview message plus one message per selected item. In each item message, `#{summary}` contains only that item's Markdown body. This is useful for platforms that reject or truncate long messages.
+
+`layout` controls how each message is rendered:
+
+- `markdown`: Uses your `request_body` template for each message. This is the default and works with generic webhooks, DingTalk, Slack, Discord, Feishu, and Lark.
+- `collapsible`: Currently supported for `platform: "feishu"` or `"lark"`. Horizon ignores `request_body` and builds one Feishu/Lark Card JSON 2.0 message with each item in a collapsed panel.
+
+For platforms without a platform-specific layout, keep `layout: "markdown"` and choose the message count with `delivery`.
+
+Example `summary_and_items` Markdown delivery config:
+
+```json
+{
+  "webhook": {
+    "enabled": true,
+    "url_env": "HORIZON_WEBHOOK_URL",
+    "delivery": "summary_and_items",
+    "overview_position": "last",
+    "platform": "generic",
+    "layout": "markdown",
+    "request_body": {
+      "text": "#{message_title}\n\n#{summary?limit=3000&split=---}"
+    }
+  }
+}
+```
+
+With `summary_and_items`, Horizon sends one overview plus one message per selected item. `overview_position: "last"` sends item messages first and keeps the overview as the newest chat message; omit it or set `"first"` to send the overview first.
 
 ### Webhook Templates
 
