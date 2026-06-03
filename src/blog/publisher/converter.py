@@ -3,7 +3,7 @@ import re
 
 import markdown as md_lib
 
-_URL_RE = re.compile(r'(?<!["\'])(https?://[^\s<>"\']+)')
+_URL_RE = re.compile(r'(?<!["\'>])(https?://[^\s<>"\']+)')
 
 _CSS = """
   *, *::before, *::after { box-sizing: border-box; }

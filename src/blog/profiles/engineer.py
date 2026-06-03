@@ -113,7 +113,10 @@ Do not force opinion onto informational posts, and do not flatten analysis posts
 
 Keep all technical terms, model names, library names, and commands in English. Write the post in {language_name}.
 
-End with a Sources section. Output raw Markdown only.
+End with a ## Sources section. List each source on its own line using this exact markdown link format:
+- [Label](url)
+
+The label must be the site name or author name only — 1 to 3 words, e.g. "GitHub", "Microsoft AI", "Simon Willison", "arXiv", "MIT News", "Hugging Face". Do not use full page titles or include " | Site Name" suffixes. Output raw Markdown only.
 {audience_context_section}
 {platform_context_section}
 """,
