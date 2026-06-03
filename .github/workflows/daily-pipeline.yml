@@ -12,7 +12,7 @@ on:
         description: 'Blog profile (engineer / news / all)'
         default: 'engineer'
       max_posts:
-        description: 'Maximum number of blog posts to generate (leave empty to use config default)'
+        description: 'Maximum number of blog posts to generate'
         default: '1'
       dry_run:
         description: 'Skip Webflow publish step'
@@ -23,7 +23,7 @@ jobs:
   pipeline:
     uses: prasanthrv-tfy/Horizon/.github/workflows/pipeline.yml@blog
     with:
-      hours:     ${{ inputs.hours     || '24' }}
+      hours:     ${{ inputs.hours     || '6' }}
       profile:   ${{ inputs.profile   || 'engineer' }}
       max_posts: ${{ inputs.max_posts || '1' }}
       dry_run:   ${{ inputs.dry_run   == true }}
