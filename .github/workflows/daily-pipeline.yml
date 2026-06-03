@@ -2,7 +2,7 @@ name: Daily Horizon Pipeline
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # midnight UTC daily
+    - cron: '0 */6 * * *'  # every 6 hours
   workflow_dispatch:
     inputs:
       hours:
@@ -11,43 +11,20 @@ on:
       profile:
         description: 'Blog profile (engineer / news / all)'
         default: 'engineer'
+      max_posts:
+        description: 'Maximum number of blog posts to generate (leave empty to use config default)'
+        default: '1'
       dry_run:
         description: 'Skip Webflow publish step'
         type: boolean
         default: false
 
 jobs:
-  run-pipeline:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: blog
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run pipeline
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          LWN_KEY: ${{ secrets.LWN_KEY }}
-          TFY_BASE_URL: ${{ secrets.TFY_BASE_URL }}
-          TFY_API_KEY: ${{ secrets.TFY_API_KEY }}
-          WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
-        run: |
-          bash scripts/run-pipeline.sh \
-            --hours "${{ inputs.hours || '24' }}" \
-            --profile "${{ inputs.profile || 'engineer' }}" \
-            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+  pipeline:
+    uses: prasanthrv-tfy/Horizon/.github/workflows/pipeline.yml@blog
+    with:
+      hours:     ${{ inputs.hours     || '24' }}
+      profile:   ${{ inputs.profile   || 'engineer' }}
+      max_posts: ${{ inputs.max_posts || '1' }}
+      dry_run:   ${{ inputs.dry_run   == true }}
+    secrets: inherit
