@@ -320,5 +320,6 @@ def main() -> None:
     config = storage.load_config()
     blog_cfg = config.blog
     output_dir = Path(blog_cfg.generator.output_dir) if blog_cfg else Path("artifacts/blog-posts")
+    output_dir.mkdir(parents=True, exist_ok=True)
     html_path = generate_results_html(output_dir, model=config.ai.model)
     Console().print(f"[green]Blog viewer:[/green] {html_path}")

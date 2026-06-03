@@ -7,6 +7,7 @@ from typing import Optional
 
 def generate_results_html(output_dir: Path, model: Optional[str] = None) -> Path:
     """Scan output_dir for profile subdirs, embed all posts, write results.html."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     posts = []
     for profile_dir in sorted(output_dir.iterdir()):
         if not profile_dir.is_dir():
