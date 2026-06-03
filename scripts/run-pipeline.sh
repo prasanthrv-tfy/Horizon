@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full Horizon pipeline: fetch → blog generation → publish
+# Full Horizon pipeline: fetch → blog generation → publish → upload artifacts
 # Usage: ./scripts/run-pipeline.sh [--hours 24] [--profile all] [--dry-run]
+# Env:   ARTIFACTS_ML_REPO — TrueFoundry ML repo name for artifact upload (skipped if unset)
 # Cron:  0 8 * * * /path/to/horizon/scripts/run-pipeline.sh >> /path/to/horizon/logs/cron.log 2>&1
 
 set -euo pipefail
@@ -13,6 +14,7 @@ LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 HOURS=24
 PROFILE="engineer"
 DRY_RUN=false
+REPO_NAME="${ARTIFACTS_ML_REPO:-}"
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -31,19 +33,29 @@ log() { echo "$LOG_PREFIX $*"; }
 log "Starting full Horizon pipeline (hours=$HOURS, profile=$PROFILE, dry_run=$DRY_RUN)"
 
 # 1. Fetch & score
-log "Stage 1/3: horizon (fetch + score + enrich)"
+log "Stage 1/4: horizon (fetch + score + enrich)"
 uv run horizon --hours "$HOURS"
 
 # 2. Blog generation
-log "Stage 2/3: horizon-blog (generate posts, profile=$PROFILE)"
+log "Stage 2/4: horizon-blog (generate posts, profile=$PROFILE)"
 uv run horizon-blog --profile "$PROFILE"
 
 # 3. Publish
 if [[ "$DRY_RUN" == true ]]; then
-  log "Stage 3/3: skipped (--dry-run)"
+  log "Stage 3/4: skipped (--dry-run)"
 else
-  log "Stage 3/3: horizon-publish (deduplicate + push to Webflow)"
+  log "Stage 3/4: horizon-publish (deduplicate + push to Webflow)"
   uv run horizon-publish
+fi
+
+# 4. Upload artifacts
+if [[ -z "$REPO_NAME" ]]; then
+  log "Stage 4/4: skipped (no ARTIFACTS_ML_REPO set)"
+elif [[ "$DRY_RUN" == true ]]; then
+  log "Stage 4/4: skipped (--dry-run)"
+else
+  log "Stage 4/4: horizon-upload-artifacts (repo=$REPO_NAME)"
+  uv run horizon-upload-artifacts --repo-name "$REPO_NAME"
 fi
 
 log "Pipeline complete."
