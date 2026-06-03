@@ -12,6 +12,8 @@ from rich.console import Console
 from src.models import ContentItem
 from .fetcher import ContentFetcher
 
+# RSS scrapers often deliver only a teaser (title + one sentence). 500 chars was chosen
+# empirically as the threshold below which a DuckDuckGo fallback yields better blog fodder.
 THIN_CONTENT_THRESHOLD = 500
 _HTML_MARKERS = ("<div", "<p>", "<span", "<!--", "<script", "<img")
 
@@ -49,15 +51,15 @@ async def enrich_thin_items(items: List[ContentItem], console: Console) -> None:
     import trafilatura
 
     needs_enrichment = []
-    for it in items:
-        content = it.content or ""
+    for item in items:
+        content = item.content or ""
         if len(content) < THIN_CONTENT_THRESHOLD:
-            needs_enrichment.append(it)
+            needs_enrichment.append(item)
         elif _looks_like_html(content):
             # Content is present but raw HTML — extract in-place without re-fetching
             extracted = trafilatura.extract(content, include_comments=False, include_tables=False) or ""
             if extracted.strip():
-                it.content = extracted[:2000]
+                item.content = extracted[:2000]
 
     if not needs_enrichment:
         return
@@ -65,5 +67,5 @@ async def enrich_thin_items(items: List[ContentItem], console: Console) -> None:
     console.print(f"🔍 Enriching {len(needs_enrichment)} thin-content items before scoring...")
     semaphore = asyncio.Semaphore(5)
     async with ContentFetcher() as fetcher:
-        await asyncio.gather(*[_enrich_one(it, fetcher, semaphore, console) for it in needs_enrichment])
+        await asyncio.gather(*[_enrich_one(item, fetcher, semaphore, console) for item in needs_enrichment])
     console.print()

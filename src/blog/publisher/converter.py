@@ -131,7 +131,11 @@ def convert_markdown(text: str) -> str:
 
 
 def reading_time(text: str) -> str:
-    """Estimate reading time from character count (~1000 chars/min). Returns 'N min read'."""
+    """Estimate reading time from character count. Returns 'N min read'.
+
+    1000 chars/min is a conservative lower-bound for technical content (typical skimming
+    speed is ~1300–1500). The intentional underestimate shows longer times rather than shorter.
+    """
     minutes = math.ceil(len(text) / 1000)
     return f"{max(1, minutes)} min read"
 

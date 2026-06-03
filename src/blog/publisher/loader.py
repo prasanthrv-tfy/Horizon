@@ -13,6 +13,8 @@ def load_post(entry: dict, base_dir: Path) -> dict:
 
     published_at = entry.get("published_at", "")
     if published_at and "T" not in published_at:
+        # Webflow requires a full ISO 8601 datetime. 9 AM UTC avoids midnight edge-cases
+        # while still resolving to "today" in most timezones.
         published_at = f"{published_at}T09:00:00Z"
 
     return {

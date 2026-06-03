@@ -80,9 +80,9 @@ async def rank_by_relevance(
 
 def _compute_weighted_sum(dim_scores: dict, gate_path) -> float:
     total = 0.0
-    for pdc in gate_path.dimensions:
-        score = dim_scores.get(pdc.dimension, {}).get("score", 0)
-        total += pdc.weight * score
+    for path_dim in gate_path.dimensions:
+        score = dim_scores.get(path_dim.dimension, {}).get("score", 0)
+        total += path_dim.weight * score
     return round(total, 3)
 
 
@@ -95,6 +95,7 @@ async def _score_single_item(
     """Score one item on all dimensions. Returns a dimensions dict or {} on failure."""
     content_preview = ""
     if item.content:
+        # 1500-char preview keeps the scoring prompt within LLM context budget; full text is only used at generation time
         content_preview = item.content.split("--- Top Comments ---")[0].strip()[:1500]
     item_text = (
         f"ID: {item.id}\nTitle: {item.title}\nSummary: {item.ai_summary or item.title}\n"
@@ -120,6 +121,120 @@ async def _score_single_item(
     return {}
 
 
+def _build_dimensions_text(dimensions) -> str:
+    """Serialize dimension definitions into the prompt format expected by the scoring LLM."""
+    dim_lines = []
+    for dim in dimensions:
+        anchor_text = " | ".join(f"{k}={v}" for k, v in sorted(dim.anchors.items(), key=lambda x: int(x[0])))
+        dim_lines.append(f"**{dim.name}**: {dim.description}\n  Anchors: {anchor_text}")
+    return "\n\n".join(dim_lines)
+
+
+def _evaluate_item(
+    item: ContentItem,
+    dim_scores: dict,
+    profile: BlogPromptProfile,
+) -> ScoredItem:
+    """Apply gate paths to a single item's dimension scores and return a ScoredItem."""
+    gate_paths = profile.gate_paths
+
+    path_results: dict = {}
+    for gate_path in gate_paths:
+        passed = True
+        failed: List[str] = []
+        scores_snapshot = {}
+        for path_dim in gate_path.dimensions:
+            score = dim_scores.get(path_dim.dimension, {}).get("score", 0)
+            scores_snapshot[path_dim.dimension] = score
+            if score < path_dim.threshold:
+                passed = False
+                failed.append(path_dim.dimension)
+        path_results[gate_path.name] = {"passed": passed, "scores": scores_snapshot, "failed_gates": failed}
+
+    # First passing path wins; remaining paths are not evaluated.
+    # Paths are independent curation strategies (e.g. research-depth vs practical-applicability),
+    # not a priority hierarchy — stopping early is intentional, not an omission.
+    inclusion_path = None
+    failed_gates: dict = {}
+    for gate_path in gate_paths:
+        pr = path_results[gate_path.name]
+        if pr["passed"]:
+            inclusion_path = gate_path.name
+            break
+        else:
+            failed_gates[gate_path.name] = pr["failed_gates"]
+    included = inclusion_path is not None
+
+    # Compute weighted sum from the winning path's dimension configs
+    weighted_sum = 0.0
+    if included:
+        winning_path = next(gp for gp in gate_paths if gp.name == inclusion_path)
+        weighted_sum = _compute_weighted_sum(dim_scores, winning_path)
+    else:
+        # Best-case sum across all paths — used for "what-if" ranking in reports only, not for inclusion
+        sums = [_compute_weighted_sum(dim_scores, gp) for gp in gate_paths]
+        weighted_sum = max(sums) if sums else 0.0
+
+    return ScoredItem(
+        item=item,
+        dimension_scores=dim_scores,
+        path_results=path_results,
+        included=included,
+        inclusion_path=inclusion_path,
+        failed_gates=failed_gates,
+        weighted_sum=weighted_sum,
+    )
+
+
+def _print_scoring_table(
+    scored_items: List[ScoredItem],
+    dimensions,
+    console: Console,
+) -> None:
+    """Print a compact scoring table for all items to the console."""
+    dim_names = [dim.name for dim in dimensions]
+    col_w = 6
+    header = f"  {'#':>3}  {'Title':<35}" + "".join(f" {n[:col_w]:>{col_w}}" for n in dim_names) + f" {'wsum':>6}  decision"
+    console.print(f"\n{header}")
+    console.print("  " + "-" * (len(header) - 2))
+    for row_num, scored_item in enumerate(scored_items, 1):
+        title = _clean_title(scored_item.item.title)[:34]
+        scores_str = "".join(
+            f" {str(scored_item.dimension_scores.get(n, {}).get('score', '?')):>{col_w}}"
+            for n in dim_names
+        )
+        wsum_str = f" {scored_item.weighted_sum:>6.2f}"
+        if scored_item.included:
+            decision = f"[green]✓ {scored_item.inclusion_path}[/green]"
+        else:
+            all_failed = [g for gs in scored_item.failed_gates.values() for g in gs]
+            decision = f"[red]✗ ({', '.join(dict.fromkeys(all_failed))})[/red]"
+        console.print(f"  {row_num:>3}  {title:<35}{scores_str}{wsum_str}  {decision}")
+    console.print()
+
+
+def _print_path_breakdown(
+    scored_items: List[ScoredItem],
+    gate_paths,
+    console: Console,
+) -> None:
+    """Print per-path item breakdown when multiple gate paths are active."""
+    if len(gate_paths) <= 1:
+        return
+    for gate_path in gate_paths:
+        path_items = sorted(
+            [scored_item for scored_item in scored_items if scored_item.inclusion_path == gate_path.name],
+            key=lambda scored_item: scored_item.weighted_sum,
+            reverse=True,
+        )
+        if not path_items:
+            continue
+        console.print(f"  [bold]{gate_path.name}[/bold] ({len(path_items)} items)")
+        for scored_item in path_items:
+            console.print(f"    {scored_item.weighted_sum:>5.2f}  {_clean_title(scored_item.item.title)[:60]}")
+    console.print()
+
+
 async def score_items_for_profile(
     items: List[ContentItem],
     ai_client,
@@ -127,18 +242,10 @@ async def score_items_for_profile(
     profile: BlogPromptProfile,
 ) -> List[ScoredItem]:
     """Score items on profile dimensions, apply gate paths, return ScoredItem list."""
-    dims = profile.scoring_dimensions
-    gate_paths = profile.gate_paths
-    dim_map = {d.name: d for d in dims}
+    dimensions = profile.scoring_dimensions
+    dimensions_text = _build_dimensions_text(dimensions)
 
-    # Build dimension definitions for the prompt (shared across all calls)
-    dim_lines = []
-    for d in dims:
-        anchor_text = " | ".join(f"{k}={v}" for k, v in sorted(d.anchors.items(), key=lambda x: int(x[0])))
-        dim_lines.append(f"**{d.name}**: {d.description}\n  Anchors: {anchor_text}")
-    dimensions_text = "\n\n".join(dim_lines)
-
-    console.print(f"🔬 [{profile.name}] Scoring {len(items)} items on {len(dims)} dimensions...")
+    console.print(f"🔬 [{profile.name}] Scoring {len(items)} items on {len(dimensions)} dimensions...")
 
     concurrency = getattr(ai_client, "config", None)
     concurrency = getattr(concurrency, "analysis_concurrency", 5) if concurrency else 5
@@ -149,93 +256,13 @@ async def score_items_for_profile(
     )
     raw_scores = {item.id: dim_scores for item, dim_scores in zip(items, dimension_scores_list)}
 
-    scored_items: List[ScoredItem] = []
-    for item in items:
-        dim_scores = raw_scores.get(item.id, {})
+    scored_items = [_evaluate_item(item, raw_scores.get(item.id, {}), profile) for item in items]
 
-        # Evaluate each gate path
-        path_results: dict = {}
-        for gate_path in gate_paths:
-            passed = True
-            failed: List[str] = []
-            scores_snapshot = {}
-            for pdc in gate_path.dimensions:
-                score = dim_scores.get(pdc.dimension, {}).get("score", 0)
-                scores_snapshot[pdc.dimension] = score
-                if score < pdc.threshold:
-                    passed = False
-                    failed.append(pdc.dimension)
-            path_results[gate_path.name] = {"passed": passed, "scores": scores_snapshot, "failed_gates": failed}
+    _print_scoring_table(scored_items, dimensions, console)
 
-        # Determine inclusion (first passing path wins)
-        inclusion_path = None
-        failed_gates: dict = {}
-        for gate_path in gate_paths:
-            pr = path_results[gate_path.name]
-            if pr["passed"]:
-                inclusion_path = gate_path.name
-                break
-            else:
-                failed_gates[gate_path.name] = pr["failed_gates"]
-        included = inclusion_path is not None
-
-        # Compute weighted sum from the winning path's dimension configs
-        weighted_sum = 0.0
-        if included:
-            winning_path = next(gp for gp in gate_paths if gp.name == inclusion_path)
-            weighted_sum = _compute_weighted_sum(dim_scores, winning_path)
-        else:
-            # Best possible sum across all paths for ranking/logging even when excluded
-            sums = [_compute_weighted_sum(dim_scores, gp) for gp in gate_paths]
-            weighted_sum = max(sums) if sums else 0.0
-
-        scored_items.append(ScoredItem(
-            item=item,
-            dimension_scores=dim_scores,
-            path_results=path_results,
-            included=included,
-            inclusion_path=inclusion_path,
-            failed_gates=failed_gates,
-            weighted_sum=weighted_sum,
-        ))
-
-    # Console table
-    dim_names = [d.name for d in dims]
-    col_w = 6
-    header = f"  {'#':>3}  {'Title':<35}" + "".join(f" {n[:col_w]:>{col_w}}" for n in dim_names) + f" {'wsum':>6}  decision"
-    console.print(f"\n{header}")
-    console.print("  " + "-" * (len(header) - 2))
-    for row_num, si in enumerate(scored_items, 1):
-        title = _clean_title(si.item.title)[:34]
-        scores_str = "".join(
-            f" {str(si.dimension_scores.get(n, {}).get('score', '?')):>{col_w}}"
-            for n in dim_names
-        )
-        wsum_str = f" {si.weighted_sum:>6.2f}"
-        if si.included:
-            decision = f"[green]✓ {si.inclusion_path}[/green]"
-        else:
-            all_failed = [g for gs in si.failed_gates.values() for g in gs]
-            decision = f"[red]✗ ({', '.join(dict.fromkeys(all_failed))})[/red]"
-        console.print(f"  {row_num:>3}  {title:<35}{scores_str}{wsum_str}  {decision}")
-    console.print()
-
-    included_count = sum(1 for si in scored_items if si.included)
+    included_count = sum(1 for scored_item in scored_items if scored_item.included)
     console.print(f"🏆 [{profile.name}] {included_count}/{len(scored_items)} items passed the gates\n")
 
-    # Per-path breakdown in console
-    if len(profile.gate_paths) > 1:
-        for gate_path in profile.gate_paths:
-            path_items = sorted(
-                [si for si in scored_items if si.inclusion_path == gate_path.name],
-                key=lambda si: si.weighted_sum,
-                reverse=True,
-            )
-            if not path_items:
-                continue
-            console.print(f"  [bold]{gate_path.name}[/bold] ({len(path_items)} items)")
-            for si in path_items:
-                console.print(f"    {si.weighted_sum:>5.2f}  {_clean_title(si.item.title)[:60]}")
-        console.print()
+    _print_path_breakdown(scored_items, profile.gate_paths, console)
 
     return scored_items

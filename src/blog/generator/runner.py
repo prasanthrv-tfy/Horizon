@@ -86,7 +86,7 @@ async def generate_and_save_posts(
         counts[lang] = counts.get(lang, 0) + 1
 
         score = blog_scores.get(post.item_id, post.score) if blog_scores else post.score
-        si = scored_map.get(post.item_id) if scored_map else None
+        scored_item = scored_map.get(post.item_id) if scored_map else None
         manifest.append({
             "item_id": post.item_id,
             "title": post.title,
@@ -97,8 +97,8 @@ async def generate_and_save_posts(
             "language": lang,
             "profile": profile.name,
             "filename": filename,
-            "inclusion_path": si.inclusion_path if si else None,
-            "dimensions": si.dimension_scores if si else {},
+            "inclusion_path": scored_item.inclusion_path if scored_item else None,
+            "dimensions": scored_item.dimension_scores if scored_item else {},
         })
 
     manifest_path = archive_dir / "posts.json"
@@ -170,6 +170,84 @@ async def _prefilter_duplicates(
         return items
 
 
+def _resolve_pinned_items(
+    items_arg: str,
+    items: List[ContentItem],
+    console: Console,
+) -> List[ContentItem]:
+    """Parse and validate the --items row-number argument. Exits on invalid input."""
+    try:
+        row_nums = [int(n.strip()) for n in items_arg.split(",") if n.strip()]
+    except ValueError:
+        console.print("[red]✗ --items expects comma-separated integers (e.g. --items 3,7,15)[/red]")
+        sys.exit(1)
+    invalid = [n for n in row_nums if n < 1 or n > len(items)]
+    if invalid:
+        console.print(f"[red]✗ Row numbers out of range (1–{len(items)}): {invalid}[/red]")
+        sys.exit(1)
+    pinned = [items[n - 1] for n in row_nums]
+    console.print(f"🎯 Pinned {len(pinned)} item(s) by row number — skipping scoring gates.\n")
+    for n, it in zip(row_nums, pinned):
+        console.print(f"   {n}. {it.title}")
+    console.print()
+    return pinned
+
+
+async def _select_items_for_profile(
+    profile: BlogPromptProfile,
+    items: List[ContentItem],
+    pinned_items: List[ContentItem] | None,
+    max_posts: int | None,
+    ai_client,
+    console: Console,
+    profiles_scored: dict,
+) -> tuple[List[ContentItem], dict | None, dict | None]:
+    """Score or rank items for a profile and return (selected, blog_scores, scored_map).
+
+    Returns early with pinned_items unchanged if pinned_items is set.
+    Writes the run log and updates profiles_scored as a side effect when dimension scoring runs.
+    """
+    if pinned_items is not None:
+        return pinned_items, None, None
+
+    if profile.scoring_dimensions:
+        scored = await score_items_for_profile(items, ai_client, console, profile)
+        log_path = _write_run_log(scored, profile.name)
+        console.print(f"📋 Run log → {log_path}\n")
+        profiles_scored[profile.name] = (profile, scored)
+
+        included = sorted(
+            (scored_item for scored_item in scored if scored_item.included),
+            key=lambda scored_item: scored_item.weighted_sum,
+            reverse=True,
+        )
+        if max_posts is None:
+            included_slice = included
+        else:
+            path_buckets: dict[str, list] = {}
+            for scored_item in included:
+                key = scored_item.inclusion_path or ""
+                path_buckets.setdefault(key, []).append(scored_item)
+            if len(path_buckets) <= 1:
+                included_slice = included[:max_posts]
+            else:
+                # Pure score-ordering would always favour items from the more permissive path.
+                # Random sampling from each path's top items gives proportional representation.
+                pool: list = []
+                for bucket in path_buckets.values():
+                    pool.extend(bucket[:max_posts])
+                included_slice = random.sample(pool, min(max_posts, len(pool)))
+
+        blog_scores = {scored_item.item.id: scored_item.weighted_sum for scored_item in included_slice}
+        scored_map = {scored_item.item.id: scored_item for scored_item in included_slice}
+        selected = [scored_item.item for scored_item in included_slice]
+        return selected, blog_scores, scored_map
+
+    ranked = await rank_by_relevance(items, ai_client, console, profile.ranking_context)
+    selected = ranked if max_posts is None else ranked[:max_posts]
+    return selected, None, None
+
+
 async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str | None = None, all_posts: bool = False, max_posts_arg: int | None = None) -> None:
     load_dotenv()
     console = Console(record=True)
@@ -183,29 +261,13 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         items = load_important_items(IMPORTANT_ITEMS_PATH)
         console.print(f"📥 Loaded {len(items)} items from {IMPORTANT_ITEMS_PATH}\n")
 
-        pinned_items = None
-        if items_arg:
-            try:
-                row_nums = [int(n.strip()) for n in items_arg.split(",") if n.strip()]
-            except ValueError:
-                console.print("[red]✗ --items expects comma-separated integers (e.g. --items 3,7,15)[/red]")
-                sys.exit(1)
-            invalid = [n for n in row_nums if n < 1 or n > len(items)]
-            if invalid:
-                console.print(f"[red]✗ Row numbers out of range (1–{len(items)}): {invalid}[/red]")
-                sys.exit(1)
-            pinned_items = [items[n - 1] for n in row_nums]
-            console.print(f"🎯 Pinned {len(pinned_items)} item(s) by row number — skipping scoring gates.\n")
-            for n, it in zip(row_nums, pinned_items):
-                console.print(f"   {n}. {it.title}")
-            console.print()
+        pinned_items = _resolve_pinned_items(items_arg, items, console) if items_arg else None
 
         blog_cfg = config.blog or BlogConfig()
         gen_cfg = blog_cfg.generator
         max_posts = None if all_posts else (max_posts_arg if max_posts_arg is not None else gen_cfg.max_posts)
 
         ai_client = create_ai_client(config.ai)
-
         await enrich_thin_items(items, console)
 
         if pinned_items is None:
@@ -218,48 +280,14 @@ async def _run(profile_arg: str | None, rank_only: bool = False, items_arg: str 
         profiles = resolve_profiles(profile_name)
         profiles_scored: dict = {}
         ai_title_maps: dict[str, dict[str, str]] = {}
+
         for profile in profiles:
-            if pinned_items is not None:
-                selected = pinned_items
-                blog_scores = None
-                scored_map = None
-            elif profile.scoring_dimensions:
-                scored = await score_items_for_profile(items, ai_client, console, profile)
-                log_path = _write_run_log(scored, profile.name)
-                console.print(f"📋 Run log → {log_path}\n")
-                profiles_scored[profile.name] = (profile, scored)
-                included = sorted(
-                    (si for si in scored if si.included),
-                    key=lambda si: si.weighted_sum,
-                    reverse=True,
-                )
-                if max_posts is None:
-                    included_slice = included
-                else:
-                    path_buckets: dict[str, list] = {}
-                    for si in included:
-                        key = si.inclusion_path or ""
-                        if key not in path_buckets:
-                            path_buckets[key] = []
-                        path_buckets[key].append(si)
-                    if len(path_buckets) <= 1:
-                        included_slice = included[:max_posts]
-                    else:
-                        pool: list = []
-                        for bucket in path_buckets.values():
-                            pool.extend(bucket[:max_posts])
-                        included_slice = random.sample(pool, min(max_posts, len(pool)))
-                blog_scores = {si.item.id: si.weighted_sum for si in included_slice}
-                scored_map = {si.item.id: si for si in included_slice}
-                selected = [si.item for si in included_slice]
-                if not selected:
-                    console.print(f"[yellow]⚠️  [{profile.name}] No items passed the gates — skipping post generation.[/yellow]\n")
-                    continue
-            else:
-                ranked = await rank_by_relevance(items, ai_client, console, profile.ranking_context)
-                selected = ranked if max_posts is None else ranked[:max_posts]
-                blog_scores = None
-                scored_map = None
+            selected, blog_scores, scored_map = await _select_items_for_profile(
+                profile, items, pinned_items, max_posts, ai_client, console, profiles_scored
+            )
+            if not selected:
+                console.print(f"[yellow]⚠️  [{profile.name}] No items passed the gates — skipping post generation.[/yellow]\n")
+                continue
 
             console.print(f"🏆  [{profile.name}] Selected top {len(selected)} items:")
             for i, item in enumerate(selected, 1):

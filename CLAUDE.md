@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync
 uv sync --extra dev        # includes pytest
 uv sync --extra openbb     # optional financial-news source
+uv sync --extra upload     # includes truefoundry SDK for artifact upload
 
 # Run the pipeline
 uv run horizon             # default 24h window
@@ -26,6 +27,10 @@ uv run horizon-blog --items 3,7,15           # generate posts for specific row n
 # Publish blog posts to Webflow (run after horizon-blog)
 uv run horizon-publish                       # deduplicates, generates SEO, pushes drafts to Webflow
 
+# Upload artifacts to TrueFoundry ML repo
+uv run horizon-upload-artifacts --repo-name my-ml-repo        # upload files directly
+uv run horizon-upload-artifacts --repo-name my-ml-repo --zip  # upload as a zip archive
+
 # Other entry points
 uv run horizon-wizard      # interactive config setup
 uv run horizon-mcp         # start MCP server
@@ -36,6 +41,8 @@ uv run pytest              # all tests
 uv run pytest tests/test_analyzer.py          # single file
 uv run pytest tests/test_analyzer.py::test_fn  # single test
 uv run pytest -x           # stop on first failure
+# Note: tests/test_blog_generator_utils.py has a pre-existing import error (unrelated to blog changes)
+# Run with --ignore=tests/test_blog_generator_utils.py to skip it
 ```
 
 ## Architecture
@@ -46,101 +53,107 @@ Horizon is a linear pipeline coordinated by `src/orchestrator.py::HorizonOrchest
 Fetch → URL Dedup → AI Score → Threshold Filter → Topic Dedup → Save → Enrich → Summarize → Deliver
 ```
 
-**Key stages:**
-- **Fetch** (`orchestrator.fetch_all_sources`): all scrapers run concurrently via `asyncio.gather` sharing a single `httpx.AsyncClient`.
-- **URL Dedup** (`merge_cross_source_duplicates`): normalises URLs, merges same-URL items across sources, keeps the richest content.
-- **AI Score** (`src/ai/analyzer.py::ContentAnalyzer`): sends each item to the LLM and receives a JSON with `score` (0–10), `reason`, `summary`, `tags`. Retries via `tenacity`.
-- **Topic Dedup** (`merge_topic_duplicates`): one AI call over all titles/summaries to detect semantically identical stories; drops lower-scored duplicates.
-- **Save** (`orchestrator._save_important_items`): serialises `important_items` to `artifacts/pipeline-output/important_items.json` for consumption by `horizon-blog`.
-- **Enrich** (`src/ai/enricher.py::ContentEnricher`): two-step AI pass — first call identifies concepts needing explanation, second call synthesises background from DuckDuckGo search results. Stores results in `item.metadata` under keys like `title_en`, `detailed_summary_zh`, `background_en`, `community_discussion_zh`, `sources`.
-- **Summarize** (`src/ai/summarizer.py::DailySummarizer`): purely programmatic Markdown rendering (no LLM call). Reads fields from `item.metadata` populated by the enricher.
-- **Deliver**: saves to `data/summaries/`, copies to `docs/_posts/` for GitHub Pages, optionally emails and/or posts to webhooks.
+- **Fetch**: all scrapers run concurrently via `asyncio.gather` sharing a single `httpx.AsyncClient`.
+- **AI Score** (`src/ai/analyzer.py`): sends each item to the LLM, receives `score` (0–10), `reason`, `summary`, `tags`. Retries via `tenacity`.
+- **Topic Dedup**: one AI call detects semantically identical stories; drops lower-scored duplicates.
+- **Save**: serialises `important_items` to `artifacts/pipeline-output/important_items.json`.
+- **Enrich** (`src/ai/enricher.py`): two-step AI pass — identifies concepts, synthesises background from DuckDuckGo search. Stores results in `item.metadata`.
+- **Summarize** (`src/ai/summarizer.py`): programmatic Markdown rendering (no LLM call).
+- **Deliver**: saves to `data/summaries/`, copies to `docs/_posts/` for GitHub Pages, optionally emails/webhooks.
 
 ### Data model
 
 `ContentItem` (Pydantic, `src/models.py`) is the universal unit throughout the pipeline:
 - `id`: `"{source}:{subtype}:{native_id}"` — stable identifier
 - `ai_score / ai_reason / ai_summary / ai_tags`: set by the analyzer
-- `metadata: Dict[str, Any]`: open-ended bag used by scrapers for engagement signals and by the enricher for translated/enriched fields
+- `metadata: Dict[str, Any]`: open-ended bag for scraper engagement signals and enricher output
 
 ### AI client abstraction
 
-`src/ai/client.py::create_ai_client(config)` is the factory. All providers share the same `complete(system, user) -> str` interface:
-- **`AnthropicClient`** — Anthropic SDK
-- **`OpenAIClient`** — covers OpenAI, Ollama, DeepSeek, Alibaba/Qwen, Doubao, MiniMax (handles per-provider quirks like temperature clamping and missing `response_format`)
-- **`AzureOpenAIClient`** — Azure OpenAI; handles `max_tokens` vs `max_completion_tokens` fallback
-- **`GeminiClient`** — Google Gemini via `google-genai`
+`src/ai/client.py::create_ai_client(config)` is the factory. All providers share `complete(system, user) -> str`:
+- **`AnthropicClient`**, **`OpenAIClient`** (covers Ollama, DeepSeek, Alibaba/Qwen, Doubao, MiniMax), **`AzureOpenAIClient`**, **`GeminiClient`**
 
 Token usage is tracked in-memory by `src/ai/tokens.py` and printed after each run.
 
 ### Adding a new scraper
 
-1. Create `src/scrapers/your_source.py` extending `BaseScraper` and implementing `fetch(since: datetime) -> List[ContentItem]`.
+1. Create `src/scrapers/your_source.py` extending `BaseScraper`, implement `fetch(since: datetime) -> List[ContentItem]`.
 2. Add a config model to `src/models.py` and add the field to `SourcesConfig`.
 3. Instantiate and register the scraper in `orchestrator.fetch_all_sources`.
 
 ### MCP server
 
-`src/mcp/service.py::HorizonPipelineService` exposes each pipeline stage as an individually-callable method (`fetch_items`, `score_items`, `filter_items`, `enrich_items`, `generate_summary`, `run_pipeline`). Stage outputs are persisted as JSON to `data/mcp-runs/<run_id>/` so agents can inspect intermediate results. The FastMCP server in `src/mcp/server.py` wraps these methods as tools.
+`src/mcp/service.py::HorizonPipelineService` exposes each pipeline stage as an individually-callable method. Stage outputs are persisted as JSON to `data/mcp-runs/<run_id>/`. The FastMCP server in `src/mcp/server.py` wraps these as tools.
 
-### Blog module
+### Configuration
 
-`src/blog/` is a self-contained module added on top of upstream Horizon. It is intentionally isolated so upstream merges only touch ~5 lines in `src/orchestrator.py` and `src/models.py`.
+`data/config.json` is validated by Pydantic against `src/models.py::Config`. Any string value supports `${ENV_VAR}` interpolation. All API keys are referenced by env-var name, not stored inline. Prompts live in `src/ai/prompts.py` (pipeline) and `src/blog/generator/prompts.py` (blog).
+
+---
+
+## Blog module
+
+`src/blog/` is a self-contained module added on top of upstream Horizon. Intentionally isolated — upstream merges only touch ~5 lines in `src/orchestrator.py` and `src/models.py`.
 
 ```
 src/blog/
-  models.py        ← shared: ScoringDimension, ScoredItem, BlogPost, BlogConfig, PublisherConfig
-  profiles/        ← shared: prompt profiles (news, engineer, ...)
-  generator/       ← blog generation pipeline (horizon-blog)
-    runner.py, writer.py, scorer.py, enricher.py, fetcher.py, loader.py, reporter.py, prompts.py
-  publisher/       ← CMS publishing pipeline (horizon-publish)
-    publisher.py   ← abstract Publisher base class
-    webflow.py     ← WebflowPublisher (Webflow Staged Items API)
-    runner.py      ← horizon-publish CLI entry point
+  models.py              ← ScoringDimension, ScoredItem, BlogPost, BlogConfig, PublisherConfig
+  viewer.py              ← generate_results_html(): self-contained HTML viewer for blog posts
+  upload_artifacts.py    ← horizon-upload-artifacts CLI (TrueFoundry ML repo)
+  profiles/              ← prompt profiles (news, engineer, ...)
+  generator/
+    runner.py            ← horizon-blog CLI entry point
+    scorer.py            ← multi-dimensional scoring + gate path evaluation
+    writer.py            ← BlogWriter: web search + LLM blog post generation
+    enricher.py          ← fetch/search-enrich thin-content items before scoring
+    fetcher.py           ← async HTTP fetch + DuckDuckGo search fallback
+    loader.py            ← load important_items.json, resolve profile list
+    reporter.py          ← write ranking_results.md and per-run JSON logs
+    prompts.py           ← ITEM_SCORING_* and RELEVANCE_RANKING_* prompt templates
+  publisher/
+    runner.py            ← horizon-publish CLI entry point
+    webflow.py           ← WebflowPublisher (Staged Items API, offset pagination)
+    deduplicator.py      ← title-normalised + semantic dedup
+    loader.py            ← read Jekyll front matter, convert Markdown → HTML
+    converter.py         ← convert_markdown(), reading_time()
+    seo.py               ← generate_seo(): one AI call per post for title + meta description
+    publisher.py         ← abstract Publisher base class
 ```
 
-**Shared (`src/blog/`)**
-- **`src/blog/models.py`** — `ScoringDimension`, `ScoredItem`, `BlogPost`, `BlogConfig`, `PublisherConfig`.
-- **`src/blog/profiles/`** — prompt profile subpackage (see below).
+### Generator flow
 
-**Generator (`src/blog/generator/`)**
-- **`generator/prompts.py`** — `ITEM_SCORING_SYSTEM/USER` (multi-dim scoring) and `RELEVANCE_RANKING_*` (legacy fallback).
-- **`generator/writer.py`** — `BlogWriter`: accepts a `BlogPromptProfile`, does DuckDuckGo web searches using the profile's research prompts, then generates a Markdown blog post via the AI client.
-- **`generator/runner.py`** — `horizon-blog` entry point: loads `artifacts/pipeline-output/important_items.json`, scores items per profile using `score_items_for_profile()`, applies gate paths, selects top N (or all with `--all-posts`) by weighted sum, calls `BlogWriter` for each, writes to `artifacts/blog-posts/{profile}/` and `docs/_posts/{profile}/`. Run logs written to `artifacts/blog-runs/YYYY-MM-DD-{profile}.json`. At the end of each run, auto-regenerates `artifacts/ranking_results.md` with the full scoring table and cross-profile comparison.
+`runner.py::_run()` orchestrates:
+1. Load `important_items.json` → enrich thin-content items (`enricher.py`)
+2. Pre-filter against recently published Webflow posts (semantic dedup, fails open)
+3. For each profile: score items (`scorer.py`) or rank by relevance, apply gate paths, select top N
+4. Generate blog posts (`writer.py`): web search for context → LLM call → write Markdown
+5. Write `posts.json` manifest, update `ranking_results.md` (`reporter.py`), generate HTML viewer (`viewer.py`)
 
-**Publisher (`src/blog/publisher/`)**
-- **`publisher/publisher.py`** — abstract `Publisher(ABC)` base class with `add_draft`, `list_items`, `get_item`, `publish_draft`, `delete_item`.
-- **`publisher/webflow.py`** — `WebflowPublisher`: `list_items` (paginated, date-filtered), `get_item`, and `add_draft` fully implemented against Webflow Staged Items API.
-- **`publisher/deduplicator.py`** — `deduplicate_posts(posts, webflow_items)` — title-normalised dedup returning `(kept, skipped)`.
-- **`publisher/loader.py`** — `load_post(path)` — reads Jekyll front matter, converts Markdown to HTML, computes reading time.
-- **`publisher/converter.py`** — `convert_markdown(text)` (Python-Markdown + `extra` extensions), `reading_time(text)`.
-- **`publisher/seo.py`** — `generate_seo(title, markdown, ai_client)` — one AI call per post for SEO title (≤60 chars) and meta description (≤160 chars); falls back gracefully on failure.
-- **`publisher/runner.py`** — `horizon-publish` CLI: reads `docs/_posts/`, deduplicates against Webflow collection, generates SEO, pushes drafts one by one, prints pushed/skipped/failed summary. Requires `WEBFLOW_TOKEN` env var and `blog.publisher.collection_id` in config.
+### Publisher flow
 
-#### Multi-dimensional scoring and gate paths
+`publisher/runner.py::_run()` orchestrates:
+1. Load all `posts.json` manifests; dump HTML snapshots to `artifacts/webflow_content/`
+2. Fetch recent Webflow items; exact-title dedup (`deduplicator.py`)
+3. For each kept post: semantic dedup → generate SEO → push draft to Webflow
 
-Profiles with `scoring_dimensions` use gate-based filtering instead of pure ranking. `score_items_for_profile()` sends all items to the LLM in one call, getting a score (0–10) + reason per dimension per item. An item is included if it passes **all** dimensions in **any** gate path (AND within path, OR across paths). Included items are ranked by a per-path weighted sum.
+### Multi-dimensional scoring and gate paths
 
-`ScoringDimension` fields: `name`, `description`, `gate_threshold`, `path_a_weight`, `path_b_weight`, `anchors`. Dimensions with `path_x_weight=0` are still scored (appear in logs) but don't contribute to that path's weighted sum.
+Profiles with `scoring_dimensions` use gate-based filtering. `score_items_for_profile()` scores all items concurrently (one LLM call per item), then evaluates gate paths. An item is included if it passes **all** dimensions in **any** gate path (AND within path, OR across paths). First passing path wins — intentional, not an omission. Included items are ranked by a per-path weighted sum; excluded items get `max(weighted_sum across paths)` for reference only.
 
-#### Prompt profiles
+### Prompt profiles
 
-Each profile is a Python file in `src/blog/profiles/` exporting a `PROFILE = BlogPromptProfile(...)`. Adding a new profile = adding one file and one import in `__init__.py`. Human-readable descriptions of all profiles, gate paths, scoring dimensions, and score milestones live in `docs/blog-profiles.md` — update it when profile code changes.
+Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogPromptProfile(...)`. Add a file + one import in `__init__.py`. Update `docs/blog-profiles.md` when profiles change.
 
-| Profile | File | Audience | Gate paths |
-|---|---|---|---|
-| `news` | `profiles/news.py` | General tech readers | Single path: significance + newsworthiness + narrative_clarity |
-| `engineer` | `profiles/engineer.py` | ML/MLOps engineers | Path A (research): ml_eng_rel >= 7 AND substance >= 7; Path B (deployable): ml_eng_rel >= 7 AND substance >= 5 AND applicability >= 6 |
+| Profile | Audience | Gate paths |
+|---|---|---|
+| `news` | General tech readers | Single path: significance + newsworthiness + narrative_clarity |
+| `engineer` | ML/MLOps engineers | Path A (research): ml_eng_rel ≥ 7 AND substance ≥ 7; Path B (deployable): ml_eng_rel ≥ 7 AND substance ≥ 5 AND applicability ≥ 6 |
 
-The engineer profile's `ai_ecosystem_significance` dimension is **not** a gate — it contributes only to Path B's weighted sum (weight 0.15) to rank major provider releases above niche ones.
+### Blog config (`data/config.json`)
 
-`BlogPromptProfile` bundles: `blog_system`, `blog_user`, `research_system`, `research_user`, `scoring_dimensions`, `gate_paths`. The research prompts control web search queries — the news profile searches for concept explanations, the engineer profile targets papers, benchmarks, and implementations.
-
-Blog config is optional in `data/config.json`:
 ```json
 "blog": {
   "max_posts": 4,
-  "topics": [],
   "output_dir": "artifacts/blog-posts",
   "prompt_profile": "news",
   "audience_context": "",
@@ -152,10 +165,17 @@ Blog config is optional in `data/config.json`:
 }
 ```
 
-Set `"prompt_profile": "all"` to run all registered profiles in one invocation; outputs land in separate subdirectories for side-by-side comparison. `max_posts` is overridden to unlimited by `--all-posts` at runtime.
+Set `"prompt_profile": "all"` to run all profiles; outputs land in separate subdirectories.
 
-### Configuration
+---
 
-`data/config.json` is validated by Pydantic against `src/models.py::Config`. Any string value supports `${ENV_VAR}` interpolation (handled in `StorageManager.load_config` before Pydantic sees the data). All API keys are referenced by env-var name, not stored inline.
+## Code style
 
-The prompt strings that drive AI scoring and enrichment live in `src/ai/prompts.py`. Blog-specific prompts live in `src/blog/generator/prompts.py`.
+### Comments
+Only add a comment when the **WHY** is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, or behaviour that would surprise a reader. Never restate what well-named identifiers already say. One short line max — no multi-line blocks.
+
+### Function length
+Each function should have a single, nameable responsibility. When a function mixes distinct concerns (data transformation + console output + file I/O), extract each into a private helper and let the original become a readable orchestrator.
+
+### Variable names
+Use full, descriptive names. Avoid single-letter variables outside tight throwaway loops (`for i, item in enumerate(...)` is fine; `for si in scored` is not). Avoid cryptic abbreviations (`pdc`, `iid`, `tm`). Timestamp variables should say what they mark (`run_start`, `push_start`) not `t0`/`t1`. Conventional short forms are fine: `e` in `except`, `i`/`j` in index loops, single-letter lambda params in one-liners.

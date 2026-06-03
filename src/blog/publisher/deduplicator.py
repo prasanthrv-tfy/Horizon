@@ -121,6 +121,8 @@ async def batch_semantic_dedup(
         duplicate_indices = data.get("duplicates", [])
         return {source_items[i]["id"] for i in duplicate_indices if 0 <= i < len(source_items)}
     except Exception as exc:
+        # Fails open: a transient API error should not block publishing valid content.
+        # Exact-title dedup already filtered obvious duplicates; semantic is a best-effort second pass.
         logger.warning("Batch semantic dedup failed — treating all as non-duplicate: %s", exc)
         return set()
 

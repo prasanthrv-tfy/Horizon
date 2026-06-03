@@ -131,24 +131,26 @@ class WebflowPublisher(Publisher):
             )
         return str(resp.json().get("id", ""))
 
+    async def _fetch_page(self, offset: int) -> Dict[str, Any]:
+        """Fetch one page of collection items. Raises on rate-limit or HTTP error."""
+        # Webflow v2 does not support cursor pagination; offset-based pagination can skip/repeat
+        # items if drafts are added between pages. Acceptable here since dedup is best-effort.
+        resp = await self._client.get(
+            f"/collections/{self._collection_id}/items",
+            params={"limit": _PAGE_LIMIT, "offset": offset},
+        )
+        if resp.status_code == 429:
+            raise RuntimeError("Webflow API rate limit exceeded (HTTP 429). Wait before retrying.")
+        resp.raise_for_status()
+        return resp.json()
+
     async def list_items(self, since: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """Fetch all collection items, optionally filtered to those on or after `since`."""
         all_items: List[Dict[str, Any]] = []
         offset = 0
 
         while True:
-            resp = await self._client.get(
-                f"/collections/{self._collection_id}/items",
-                params={"limit": _PAGE_LIMIT, "offset": offset},
-            )
-            if resp.status_code == 429:
-                raise RuntimeError(
-                    "Webflow API rate limit exceeded (HTTP 429). "
-                    "Wait before retrying."
-                )
-            resp.raise_for_status()
-
-            data = resp.json()
+            data = await self._fetch_page(offset)
             items = data.get("items", [])
             if not items:
                 break

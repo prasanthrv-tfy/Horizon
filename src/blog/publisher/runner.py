@@ -44,6 +44,59 @@ def _dump_html(posts: List[Tuple[dict, Path]], console: Console) -> None:
     console.print(f"[dim]📄 HTML snapshots written to {DUMP_HTML_DIR}[/dim]\n")
 
 
+async def _publish_batch(
+    posts: List[Tuple[dict, Path]],
+    existing_items_for_dedup: list,
+    publisher,
+    ai_client,
+    console: Console,
+    max_drafts: int | None,
+) -> tuple[int, List[Tuple[dict, Path]], int]:
+    """Push each post through semantic dedup → SEO → Webflow draft.
+
+    Returns (pushed_count, semantic_skipped_list, failed_count).
+    """
+    console.print(f"📤 Publishing up to {max_drafts if max_drafts is not None else 'all'} new post(s)...\n")
+    pushed = 0
+    failed = 0
+    semantic_skipped: List[Tuple[dict, Path]] = []
+
+    for entry, base_dir in posts:
+        if max_drafts is not None and pushed >= max_drafts:
+            break
+
+        title = entry.get("title", "")
+        console.print(f"   → {title}")
+
+        console.print(f"      checking semantic duplicates...")
+        is_dup, matched = await semantic_is_duplicate(title, existing_items_for_dedup, ai_client)
+        if is_dup:
+            console.print(f"      [dim]⊘ semantic duplicate — matches: {matched!r}[/dim]")
+            semantic_skipped.append((entry, base_dir))
+            console.print()
+            continue
+
+        try:
+            post = load_post(entry, base_dir)
+            console.print(f"      generating SEO...")
+            seo = await generate_seo(title, post["markdown"], ai_client)
+            post.update(seo)
+            console.print(f"      seo_title: {post.get('seo_title', '')!r}")
+
+            push_start = datetime.now(tz=timezone.utc)
+            console.print(f"      pushing draft to Webflow...")
+            item_id = await publisher.add_draft(post)
+            elapsed_push = (datetime.now(tz=timezone.utc) - push_start).total_seconds()
+            console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
+            pushed += 1
+        except Exception as exc:
+            console.print(f"      [red]✗ failed — {exc}[/red]")
+            failed += 1
+        console.print()
+
+    return pushed, semantic_skipped, failed
+
+
 async def _run(console: Console, max_drafts: int | None = None) -> None:
     token = os.environ.get("WEBFLOW_TOKEN")
     if not token:
@@ -85,10 +138,10 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
     publisher = create_publisher(publisher_cfg, token)
 
     try:
-        t0 = datetime.now(tz=timezone.utc)
+        run_start = datetime.now(tz=timezone.utc)
         console.print(f"🔍 Fetching Webflow items (collection {collection_id}, past {dedup_days} day(s))...")
         existing_items = await publisher.list_items(since=since)
-        elapsed = (datetime.now(tz=timezone.utc) - t0).total_seconds()
+        elapsed = (datetime.now(tz=timezone.utc) - run_start).total_seconds()
         console.print(f"   Retrieved {len(existing_items)} existing item(s) in {elapsed:.1f}s\n")
 
         kept, skipped = deduplicate_posts(posts, existing_items)
@@ -120,46 +173,11 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
             if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("meta-description")
         ]
 
-        console.print(f"📤 Publishing up to {max_drafts if max_drafts is not None else 'all'} new post(s)...\n")
-        pushed = 0
-        failed = 0
-        semantic_skipped: List[Tuple[dict, Path]] = []
+        pushed, semantic_skipped, failed = await _publish_batch(
+            kept_with_scores, existing_items_for_dedup, publisher, ai_client, console, max_drafts
+        )
 
-        for entry, base_dir in kept_with_scores:
-            if max_drafts is not None and pushed >= max_drafts:
-                break
-
-            title = entry.get("title", "")
-            console.print(f"   → {title}")
-
-            # Semantic dedup check before publishing
-            console.print(f"      checking semantic duplicates...")
-            is_dup, matched = await semantic_is_duplicate(title, existing_items_for_dedup, ai_client)
-            if is_dup:
-                console.print(f"      [dim]⊘ semantic duplicate — matches: {matched!r}[/dim]")
-                semantic_skipped.append((entry, base_dir))
-                console.print()
-                continue
-
-            try:
-                post = load_post(entry, base_dir)
-                console.print(f"      generating SEO...")
-                seo = await generate_seo(title, post["markdown"], ai_client)
-                post.update(seo)
-                console.print(f"      seo_title: {post.get('seo_title', '')!r}")
-
-                t_push = datetime.now(tz=timezone.utc)
-                console.print(f"      pushing draft to Webflow...")
-                item_id = await publisher.add_draft(post)
-                elapsed_push = (datetime.now(tz=timezone.utc) - t_push).total_seconds()
-                console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
-                pushed += 1
-            except Exception as exc:
-                console.print(f"      [red]✗ failed — {exc}[/red]")
-                failed += 1
-            console.print()
-
-        total_elapsed = (datetime.now(tz=timezone.utc) - t0).total_seconds()
+        total_elapsed = (datetime.now(tz=timezone.utc) - run_start).total_seconds()
         console.print(
             f"📊 Pushed: {pushed}"
             f"  |  Skipped [title]: {len(skipped)}"

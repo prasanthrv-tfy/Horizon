@@ -15,6 +15,8 @@ from ddgs import DDGS
 _FETCH_MAX_CHARS = 2000
 _SEARCH_MIN_CHARS = 200
 
+# Several news CDNs (Medium, Substack, some paywalled sites) return 403 or bot pages
+# without standard browser headers. Spoofing Chrome headers is required for reliable extraction.
 _BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -72,6 +74,8 @@ class ContentFetcher:
         query = f'{title} {" ".join(tags[:2])}'.strip()
         results = None
         try:
+            # duckduckgo-search emits debug/warning noise to stderr that pollutes the progress bar;
+            # redirect is scoped tightly here so legitimate errors elsewhere remain visible.
             stderr = sys.stderr
             sys.stderr = open(os.devnull, "w")
             try:

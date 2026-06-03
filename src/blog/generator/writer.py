@@ -31,11 +31,70 @@ LANGUAGE_NAMES = {
 
 
 def _safe_format(template: str, **kwargs) -> str:
-    """Format a template string, leaving unknown placeholders unchanged."""
+    """Format a template string, leaving unknown placeholders unchanged.
+
+    Profile prompts may reference placeholders (e.g. {audience_context_section}) that
+    some profiles don't define. Plain format_map() would raise KeyError; leaving them
+    as-is lets each profile safely omit optional sections.
+    """
     class _SafeDict(dict):
         def __missing__(self, key):
             return "{" + key + "}"
     return template.format_map(_SafeDict(**kwargs))
+
+
+def _split_content(raw: str) -> tuple[str, str]:
+    """Split raw item content into (article_text, comments_text).
+
+    HN/Reddit items append a large comment thread after this marker.
+    Comments are budgeted separately (3000 chars) so discussion noise
+    doesn't crowd out the main article body (8000 chars). If the marker
+    is absent the split degrades gracefully — full content, no comments.
+    """
+    if not raw:
+        return "", ""
+    if "--- Top Comments ---" in raw:
+        main, comments_part = raw.split("--- Top Comments ---", 1)
+        return main.strip()[:8000], comments_part.strip()[:3000]
+    return raw[:8000], ""
+
+
+def _build_engagement(meta: dict) -> str:
+    """Format item engagement metadata (score, comments, likes, etc.) into a readable string."""
+    parts = []
+    if meta.get("score"):
+        parts.append(f"score: {meta['score']}")
+    if meta.get("descendants"):
+        parts.append(f"{meta['descendants']} comments")
+    if meta.get("favorite_count"):
+        parts.append(f"{meta['favorite_count']} likes")
+    if meta.get("retweet_count"):
+        parts.append(f"{meta['retweet_count']} retweets")
+    if meta.get("upvote_ratio"):
+        parts.append(f"upvote ratio: {meta['upvote_ratio']:.0%}")
+    return ", ".join(parts) if parts else "No engagement data available."
+
+
+def _build_sources(item: ContentItem, all_results: list) -> str:
+    """Build a markdown bullet list of all source URLs (original + web search results)."""
+    urls = [str(item.url)] + [r["url"] for r in all_results if r.get("url")]
+    return "\n".join(f"- {u}" for u in urls)
+
+
+def _extract_title(markdown: str, fallback: str) -> str:
+    """Extract the first H1 headline from the generated markdown.
+
+    Prefers the AI-generated headline over the raw source title because the AI is
+    prompted to write a more SEO-friendly and reader-oriented headline.
+    Falls back to `fallback` if no H1 is present on the first non-empty line.
+    """
+    for line in markdown.split('\n'):
+        stripped = line.strip()
+        if stripped.startswith('# '):
+            return stripped[2:].strip()
+        elif stripped:
+            break
+    return fallback
 
 
 class BlogWriter:
@@ -87,18 +146,28 @@ class BlogWriter:
         self, item: ContentItem, language: str
     ) -> Optional[BlogPost]:
         """Generate a single blog post for one item in one language."""
-        content_text = ""
-        comments_text = ""
-        if item.content:
-            if "--- Top Comments ---" in item.content:
-                main, comments_part = item.content.split("--- Top Comments ---", 1)
-                content_text = main.strip()[:8000]
-                comments_text = comments_part.strip()[:3000]
-            else:
-                content_text = item.content[:8000]
+        content_text, comments_text = _split_content(item.content or "")
+        web_context, all_results = await self._gather_web_context(item, content_text)
+        engagement = _build_engagement(item.metadata)
+        sources = _build_sources(item, all_results)
+        markdown = await self._call_llm(item, language, content_text, comments_text, web_context, engagement, sources)
+        title = _extract_title(markdown, fallback=item.title)
+        return BlogPost(
+            item_id=item.id,
+            title=title,
+            markdown=markdown,
+            language=language,
+            score=item.ai_score or 0,
+            url=str(item.url),
+            tags=list(item.ai_tags) if item.ai_tags else [],
+            published_at=datetime.now(timezone.utc).isoformat(),
+        )
 
+    async def _gather_web_context(
+        self, item: ContentItem, content_text: str
+    ) -> tuple[str, list]:
+        """Run web searches for the item and return (formatted web context, raw result list)."""
         queries = await self._extract_concepts(item, content_text)
-
         all_results = []
         web_sections = []
         for query in queries:
@@ -108,38 +177,28 @@ class BlogWriter:
                 lines = [f"- [{r['title']}]({r['url']}): {r['body']}" for r in results]
                 web_sections.append(f"**{query}:**\n" + "\n".join(lines))
         web_context = "\n\n".join(web_sections) if web_sections else "No web search results available."
+        return web_context, all_results
 
-        meta = item.metadata
-        engagement_items = []
-        if meta.get("score"):
-            engagement_items.append(f"score: {meta['score']}")
-        if meta.get("descendants"):
-            engagement_items.append(f"{meta['descendants']} comments")
-        if meta.get("favorite_count"):
-            engagement_items.append(f"{meta['favorite_count']} likes")
-        if meta.get("retweet_count"):
-            engagement_items.append(f"{meta['retweet_count']} retweets")
-        if meta.get("upvote_ratio"):
-            engagement_items.append(f"upvote ratio: {meta['upvote_ratio']:.0%}")
-        engagement = ", ".join(engagement_items) if engagement_items else "No engagement data available."
-
-        sources_list = [str(item.url)]
-        for r in all_results:
-            if r.get("url"):
-                sources_list.append(r["url"])
-        sources = "\n".join(f"- {u}" for u in sources_list)
-
-        comments_section = f"\n**Community Comments:**\n{comments_text}\n" if comments_text else ""
+    async def _call_llm(
+        self,
+        item: ContentItem,
+        language: str,
+        content_text: str,
+        comments_text: str,
+        web_context: str,
+        engagement: str,
+        sources: str,
+    ) -> str:
+        """Build prompts, call the LLM, and return clean markdown (fences stripped)."""
         language_name = LANGUAGE_NAMES.get(language, language)
+        comments_section = f"\n**Community Comments:**\n{comments_text}\n" if comments_text else ""
 
         # Build optional context sections for profiles that support them
         audience_context_section = (
-            f"\n**Target audience:** {self.audience_context}\n"
-            if self.audience_context else ""
+            f"\n**Target audience:** {self.audience_context}\n" if self.audience_context else ""
         )
         platform_context_section = (
-            f"\n**Platform context:** {self.platform_context}\n"
-            if self.platform_context else ""
+            f"\n**Platform context:** {self.platform_context}\n" if self.platform_context else ""
         )
 
         system_prompt = _safe_format(
@@ -172,34 +231,14 @@ class BlogWriter:
         )
 
         markdown = markdown.strip()
+        # Some LLMs wrap their response in triple-backtick fences despite instructions not to.
         if markdown.startswith("```markdown"):
             markdown = markdown[len("```markdown"):].strip()
         if markdown.startswith("```"):
             markdown = markdown[3:].strip()
         if markdown.endswith("```"):
             markdown = markdown[:-3].strip()
-
-        # Prefer the AI-generated H1 headline over the raw source title.
-        # The source title is often first-person ("Our response to...") or promotional.
-        extracted_title = item.title
-        for line in markdown.split('\n'):
-            stripped = line.strip()
-            if stripped.startswith('# '):
-                extracted_title = stripped[2:].strip()
-                break
-            elif stripped:
-                break
-
-        return BlogPost(
-            item_id=item.id,
-            title=extracted_title,
-            markdown=markdown,
-            language=language,
-            score=item.ai_score or 0,
-            url=str(item.url),
-            tags=list(item.ai_tags) if item.ai_tags else [],
-            published_at=datetime.now(timezone.utc).isoformat(),
-        )
+        return markdown
 
     async def _extract_concepts(self, item: ContentItem, content_text: str) -> List[str]:
         """Generate web search queries using the profile's research prompts."""
@@ -227,6 +266,8 @@ class BlogWriter:
         query = _sanitize_ddg_query(query)
         results = None
         try:
+            # duckduckgo-search emits debug/warning noise to stderr; scoped redirect avoids
+            # polluting the progress bar while leaving other stderr output unaffected.
             stderr = sys.stderr
             sys.stderr = open(os.devnull, "w")
             try:
@@ -246,4 +287,3 @@ class BlogWriter:
             {"title": r.get("title", ""), "url": r.get("href", ""), "body": r.get("body", "")}
             for r in results
         ]
-
