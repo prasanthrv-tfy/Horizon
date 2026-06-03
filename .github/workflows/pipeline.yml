@@ -22,6 +22,7 @@ on:
       LWN_KEY:           { required: false }
       TFY_BASE_URL:      { required: true }
       TFY_API_KEY:       { required: true }
+      TFY_HOST:          { required: true }
       WEBFLOW_TOKEN:     { required: true }
       ARTIFACTS_ML_REPO: { required: true }
 
@@ -34,7 +35,7 @@ on:
         description: 'Blog profile (engineer / news / all)'
         default: 'engineer'
       max_posts:
-        description: 'Maximum number of blog posts to generate (leave empty to use config default)'
+        description: 'Maximum number of blog posts to generate'
         default: '1'
       dry_run:
         description: 'Skip Webflow publish step'
@@ -72,6 +73,7 @@ jobs:
           TFY_API_KEY: ${{ secrets.TFY_API_KEY }}
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
           ARTIFACTS_ML_REPO: ${{ secrets.ARTIFACTS_ML_REPO }}
+          TFY_HOST: ${{ secrets.TFY_HOST }}
         run: |
           bash scripts/run-pipeline.sh \
             --hours "${{ inputs.hours || '24' }}" \
