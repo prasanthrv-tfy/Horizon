@@ -2,25 +2,42 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 _SOURCES_RE = re.compile(
     r'(<h[2-4][^>]*>[Ss]ources</h[2-4]>)\s*<ul>(.*?)</ul>',
     re.DOTALL,
 )
+# Matches an <li> whose entire content is a single <a> element (no surrounding text)
+_LINK_ONLY_RE = re.compile(r'^<a href="([^"]+)">(.*?)</a>$', re.DOTALL)
 
 
 def _reformat_sources(html: str) -> str:
-    """Convert the Sources <ul>/<li> block to <p> elements.
+    """Convert the Sources <ul>/<li> block to <p> elements for Webflow compatibility.
 
-    Webflow's Rich Text API sanitizer strips <li> whose only content is an <a>
-    element, which is the exact pattern every Sources section uses. Converting
-    to <p> tags preserves the links.
+    Webflow strips block elements whose only content is a bare <a> tag. This
+    function ensures every source entry has a visible text label outside the link,
+    regardless of what format the AI chose when writing the Sources section.
     """
     def _replace(m: re.Match) -> str:
         heading = m.group(1)
         items = re.findall(r'<li>(.*?)</li>', m.group(2), re.DOTALL)
-        paragraphs = ''.join(f'<p>{item.strip()}</p>' for item in items)
-        return heading + paragraphs
+        paragraphs = []
+        for item in items:
+            item = item.strip()
+            lm = _LINK_ONLY_RE.match(item)
+            if lm:
+                url, text = lm.group(1), lm.group(2)
+                if text.startswith('http'):
+                    # Bare URL as link text — derive label from domain
+                    label = urlparse(url).netloc.lstrip('www.')
+                else:
+                    # Descriptive label inside the <a> — move it outside
+                    label = text
+                paragraphs.append(f'<p>{label}: <a href="{url}">{url}</a></p>')
+            else:
+                paragraphs.append(f'<p>{item}</p>')
+        return heading + ''.join(paragraphs)
     return _SOURCES_RE.sub(_replace, html)
 
 import httpx
