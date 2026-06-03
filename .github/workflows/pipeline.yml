@@ -1,8 +1,29 @@
-name: Daily Horizon Pipeline
+name: Horizon Pipeline
 
 on:
-  schedule:
-    - cron: '0 0 * * *'  # midnight UTC daily
+  workflow_call:
+    inputs:
+      hours:
+        type: string
+        default: '24'
+      profile:
+        type: string
+        default: 'engineer'
+      max_posts:
+        type: string
+        default: '1'
+      dry_run:
+        type: boolean
+        default: false
+    secrets:
+      OPENAI_API_KEY:    { required: false }
+      ANTHROPIC_API_KEY: { required: false }
+      GOOGLE_API_KEY:    { required: false }
+      LWN_KEY:           { required: false }
+      TFY_BASE_URL:      { required: false }
+      TFY_API_KEY:       { required: false }
+      WEBFLOW_TOKEN:     { required: false }
+
   workflow_dispatch:
     inputs:
       hours:
@@ -11,6 +32,9 @@ on:
       profile:
         description: 'Blog profile (engineer / news / all)'
         default: 'engineer'
+      max_posts:
+        description: 'Maximum number of blog posts to generate (leave empty to use config default)'
+        default: '1'
       dry_run:
         description: 'Skip Webflow publish step'
         type: boolean
@@ -50,4 +74,5 @@ jobs:
           bash scripts/run-pipeline.sh \
             --hours "${{ inputs.hours || '24' }}" \
             --profile "${{ inputs.profile || 'engineer' }}" \
+            ${{ inputs.max_posts != '' && format('--max-posts {0}', inputs.max_posts) || '' }} \
             ${{ inputs.dry_run == true && '--dry-run' || '' }}
