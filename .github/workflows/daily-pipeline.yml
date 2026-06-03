@@ -2,7 +2,7 @@ name: Daily Horizon Pipeline
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # midnight UTC daily
+    - cron: '0 */6 * * *'  # every 6 hours
   workflow_dispatch:
     inputs:
       hours:
@@ -11,6 +11,9 @@ on:
       profile:
         description: 'Blog profile (engineer / news / all)'
         default: 'engineer'
+      max_posts:
+        description: 'Maximum number of blog posts to generate (leave empty to use config default)'
+        default: '1'
       dry_run:
         description: 'Skip Webflow publish step'
         type: boolean
@@ -50,4 +53,5 @@ jobs:
           bash scripts/run-pipeline.sh \
             --hours "${{ inputs.hours || '24' }}" \
             --profile "${{ inputs.profile || 'engineer' }}" \
+            ${{ inputs.max_posts != '' && format('--max-posts {0}', inputs.max_posts) || '' }} \
             ${{ inputs.dry_run == true && '--dry-run' || '' }}

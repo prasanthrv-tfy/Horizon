@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full Horizon pipeline: fetch → blog generation → publish → upload artifacts
-# Usage: ./scripts/run-pipeline.sh [--hours 24] [--profile all] [--dry-run]
+# Usage: ./scripts/run-pipeline.sh [--hours 24] [--profile all] [--max-posts 4] [--dry-run]
 # Env:   ARTIFACTS_ML_REPO — TrueFoundry ML repo name for artifact upload (skipped if unset)
 # Cron:  0 8 * * * /path/to/horizon/scripts/run-pipeline.sh >> /path/to/horizon/logs/cron.log 2>&1
 
@@ -13,15 +13,17 @@ LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 # Defaults
 HOURS=24
 PROFILE="engineer"
+MAX_POSTS=""
 DRY_RUN=false
 REPO_NAME="${ARTIFACTS_ML_REPO:-}"
 
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --hours)   HOURS="$2";   shift 2 ;;
-    --profile) PROFILE="$2"; shift 2 ;;
-    --dry-run) DRY_RUN=true; shift   ;;
+    --hours)     HOURS="$2";     shift 2 ;;
+    --profile)   PROFILE="$2";   shift 2 ;;
+    --max-posts) MAX_POSTS="$2"; shift 2 ;;
+    --dry-run)   DRY_RUN=true;   shift   ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -30,7 +32,7 @@ cd "$PROJECT_DIR"
 
 log() { echo "$LOG_PREFIX $*"; }
 
-log "Starting full Horizon pipeline (hours=$HOURS, profile=$PROFILE, dry_run=$DRY_RUN)"
+log "Starting full Horizon pipeline (hours=$HOURS, profile=$PROFILE, max_posts=${MAX_POSTS:-default}, dry_run=$DRY_RUN)"
 
 # 1. Fetch & score
 log "Stage 1/4: horizon (fetch + score + enrich)"
@@ -38,7 +40,9 @@ uv run horizon --hours "$HOURS"
 
 # 2. Blog generation
 log "Stage 2/4: horizon-blog (generate posts, profile=$PROFILE)"
-uv run horizon-blog --profile "$PROFILE"
+BLOG_ARGS=(--profile "$PROFILE")
+[[ -n "$MAX_POSTS" ]] && BLOG_ARGS+=(--max-posts "$MAX_POSTS")
+uv run horizon-blog "${BLOG_ARGS[@]}"
 
 # 3. Publish
 if [[ "$DRY_RUN" == true ]]; then
