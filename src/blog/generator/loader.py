@@ -15,11 +15,8 @@ def _clean_title(title: str) -> str:
 
 def load_important_items(path: Path) -> List[ContentItem]:
     if not path.exists():
-        print(
-            f"[error] {path} not found. Run `uv run horizon` first to generate it.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        print("No pipeline output found. Skipping blog generation.")
+        sys.exit(0)
 
     data = json.loads(path.read_text(encoding="utf-8"))
     if not data:
