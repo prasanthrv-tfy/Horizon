@@ -226,7 +226,16 @@
     },
     "publisher": {
       "collection_id": "69fdb1f79e0eefe055360e10",
-      "max_drafts": 4
+      "site_id": "6291b38507a5238373237679",
+      "image_field": "cover-image",
+      "max_drafts": 4,
+      "image_generation": {
+        "enabled": false,
+        "model": "image-gen/stability.stable-image-core-v1-1",
+        "base_url_env": "TFY_BASE_URL",
+        "api_key_env": "TFY_API_KEY",
+        "aspect_ratio": "16:9"
+      }
     }
   }
 }

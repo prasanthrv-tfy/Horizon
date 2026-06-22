@@ -21,6 +21,7 @@ from .deduplicator import deduplicate_posts, semantic_is_duplicate
 from .converter import wrap_html
 from .loader import load_manifest, load_post
 from .seo import generate_seo
+from .image_generator import generate_image_prompt, generate_image
 
 BLOG_POSTS_DIR = Path("artifacts/blog-posts")
 DUMP_HTML_DIR = Path("artifacts/webflow_content")
@@ -44,6 +45,9 @@ def _dump_html(posts: List[Tuple[dict, Path]], console: Console) -> None:
     console.print(f"[dim]📄 HTML snapshots written to {DUMP_HTML_DIR}[/dim]\n")
 
 
+COVER_IMAGES_DIR = Path("artifacts/cover-images")
+
+
 async def _publish_batch(
     posts: List[Tuple[dict, Path]],
     existing_items_for_dedup: list,
@@ -51,8 +55,13 @@ async def _publish_batch(
     ai_client,
     console: Console,
     max_drafts: int | None,
+    is_draft: bool = True,
+    generate_image_flag: bool = False,
+    image_gen_config=None,
+    site_id: str = "",
+    dry_run: bool = False,
 ) -> tuple[int, List[Tuple[dict, Path]], int]:
-    """Push each post through semantic dedup → SEO → Webflow draft.
+    """Push each post through semantic dedup → SEO → [image] → Webflow.
 
     Returns (pushed_count, semantic_skipped_list, failed_count).
     """
@@ -60,6 +69,8 @@ async def _publish_batch(
     pushed = 0
     failed = 0
     semantic_skipped: List[Tuple[dict, Path]] = []
+    wants_image = generate_image_flag or (image_gen_config and image_gen_config.enabled)
+    do_image = wants_image and (bool(site_id) or dry_run)
 
     for entry, base_dir in posts:
         if max_drafts is not None and pushed >= max_drafts:
@@ -83,11 +94,46 @@ async def _publish_batch(
             post.update(seo)
             console.print(f"      seo_title: {post.get('seo_title', '')!r}")
 
-            push_start = datetime.now(tz=timezone.utc)
-            console.print(f"      pushing draft to Webflow...")
-            item_id = await publisher.add_draft(post)
-            elapsed_push = (datetime.now(tz=timezone.utc) - push_start).total_seconds()
-            console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
+            if do_image:
+                try:
+                    console.print(f"      generating cover image...")
+                    slug = title.lower().replace(" ", "-")[:40]
+                    image_prompt = await generate_image_prompt(
+                        title,
+                        post.get("tags", []),
+                        post.get("seo_description", ""),
+                        ai_client,
+                    )
+                    COVER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+                    (COVER_IMAGES_DIR / f"{slug}.prompt.txt").write_text(image_prompt, encoding="utf-8")
+                    console.print(f"      [dim]image prompt saved — {COVER_IMAGES_DIR / f'{slug}.prompt.txt'}[/dim]")
+                    image_bytes = await generate_image(image_prompt, image_gen_config)
+                    if image_bytes:
+                        if dry_run:
+                            save_path = COVER_IMAGES_DIR / f"{slug}.png"
+                            save_path.write_bytes(image_bytes)
+                            console.print(f"      [dim][dry-run] cover image saved — {save_path}[/dim]")
+                        else:
+                            image_asset = await publisher.upload_asset(image_bytes, f"{slug}.png", site_id)
+                            if image_asset:
+                                post["image_asset"] = image_asset
+                                console.print(f"      [dim]cover image uploaded — {image_asset.get('hostedUrl', '')}[/dim]")
+                            else:
+                                console.print(f"      [yellow]⚠ cover image upload failed — continuing without image[/yellow]")
+                    else:
+                        console.print(f"      [yellow]⚠ cover image generation failed — continuing without image[/yellow]")
+                except Exception as img_exc:
+                    console.print(f"      [yellow]⚠ cover image error — {img_exc} — continuing without image[/yellow]")
+
+            mode_label = "draft" if is_draft else "live"
+            if dry_run:
+                console.print(f"      [dim][dry-run] would push {mode_label} to Webflow[/dim]")
+            else:
+                push_start = datetime.now(tz=timezone.utc)
+                console.print(f"      pushing {mode_label} to Webflow...")
+                item_id = await publisher.add_draft(post, is_draft=is_draft)
+                elapsed_push = (datetime.now(tz=timezone.utc) - push_start).total_seconds()
+                console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
             pushed += 1
         except Exception as exc:
             console.print(f"      [red]✗ failed — {exc}[/red]")
@@ -97,7 +143,13 @@ async def _publish_batch(
     return pushed, semantic_skipped, failed
 
 
-async def _run(console: Console, max_drafts: int | None = None) -> None:
+async def _run(
+    console: Console,
+    max_drafts: int | None = None,
+    publish: bool = False,
+    generate_image_flag: bool = False,
+    dry_run: bool = False,
+) -> None:
     token = os.environ.get("WEBFLOW_TOKEN")
     if not token:
         console.print("[red]✗ WEBFLOW_TOKEN environment variable is not set.[/red]")
@@ -134,11 +186,23 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
     dedup_days = publisher_cfg.deduplication_time_window if publisher_cfg else 14
     since = datetime.now(tz=timezone.utc) - timedelta(days=dedup_days)
 
+    image_gen_config = publisher_cfg.image_generation if publisher_cfg else None
+    site_id = publisher_cfg.site_id if publisher_cfg else ""
+    do_image = generate_image_flag or (image_gen_config and image_gen_config.enabled)
+    if do_image and not site_id:
+        console.print(
+            "[yellow]⚠ Image generation requested but blog.publisher.site_id is not set — "
+            "skipping cover image generation.[/yellow]\n"
+        )
+
     ai_client = create_ai_client(config.ai)
     publisher = create_publisher(publisher_cfg, token)
 
     try:
         run_start = datetime.now(tz=timezone.utc)
+        if dry_run:
+            console.print("[yellow]⚠ DRY RUN — no changes will be made to Webflow[/yellow]\n")
+
         console.print(f"🔍 Fetching Webflow items (collection {collection_id}, past {dedup_days} day(s))...")
         existing_items = await publisher.list_items(since=since)
         elapsed = (datetime.now(tz=timezone.utc) - run_start).total_seconds()
@@ -174,7 +238,17 @@ async def _run(console: Console, max_drafts: int | None = None) -> None:
         ]
 
         pushed, semantic_skipped, failed = await _publish_batch(
-            kept_with_scores, existing_items_for_dedup, publisher, ai_client, console, max_drafts
+            kept_with_scores,
+            existing_items_for_dedup,
+            publisher,
+            ai_client,
+            console,
+            max_drafts,
+            is_draft=not publish,
+            generate_image_flag=generate_image_flag,
+            image_gen_config=image_gen_config,
+            site_id=site_id,
+            dry_run=dry_run,
         )
 
         total_elapsed = (datetime.now(tz=timezone.utc) - run_start).total_seconds()
@@ -199,6 +273,21 @@ def main() -> None:
         type=int,
         help="Maximum number of drafts to push. Posts are ranked by their blog score; top N are published.",
     )
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Publish items live to Webflow immediately instead of creating drafts.",
+    )
+    parser.add_argument(
+        "--generate-image",
+        action="store_true",
+        help="Generate and upload an AI cover image for each post. Overrides image_generation.enabled in config.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview publish without writing to Webflow. Generated cover images are saved to artifacts/cover-images/.",
+    )
     args = parser.parse_args()
 
     load_dotenv()
@@ -214,7 +303,13 @@ def main() -> None:
     console = Console(record=True)
     console.print("[bold cyan]📤 Horizon Publish — Starting...[/bold cyan]\n")
     try:
-        asyncio.run(_run(console, max_drafts=max_drafts))
+        asyncio.run(_run(
+            console,
+            max_drafts=max_drafts,
+            publish=args.publish,
+            generate_image_flag=args.generate_image,
+            dry_run=args.dry_run,
+        ))
     finally:
         (LOGS_DIR / "plain").mkdir(parents=True, exist_ok=True)
         (LOGS_DIR / "html").mkdir(parents=True, exist_ok=True)

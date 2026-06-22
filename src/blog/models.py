@@ -62,12 +62,25 @@ class BlogPost:
     published_at: str = ""
 
 
+class ImageGenerationConfig(BaseModel):
+    """Configuration for AI cover image generation during publishing."""
+
+    enabled: bool = False
+    model: str = "image-gen/stability.stable-image-core-v1-1"
+    base_url_env: str = "TFY_BASE_URL"
+    api_key_env: str = "TFY_API_KEY"
+    aspect_ratio: str = "16:9"
+
+
 class PublisherConfig(BaseModel):
     """Configuration for the publishing pipeline."""
 
     collection_id: str = ""
+    site_id: str = ""
+    image_field: str = ""
     deduplication_time_window: int = 14  # days
     max_drafts: Optional[int] = None
+    image_generation: ImageGenerationConfig = ImageGenerationConfig()
 
 
 class GeneratorConfig(BaseModel):

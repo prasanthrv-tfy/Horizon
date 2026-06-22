@@ -58,6 +58,8 @@ def _reformat_sources(html: str) -> str:
         return heading + ''.join(_normalize_source_item(item) for item in items)
     return _SOURCES_RE.sub(_replace, html)
 
+import hashlib
+
 import httpx
 
 from .publisher import Publisher
@@ -92,8 +94,9 @@ def _make_slug(title: str, max_length: int = 60) -> str:
 class WebflowPublisher(Publisher):
     """Webflow CMS implementation of Publisher (Staged Items API)."""
 
-    def __init__(self, token: str, collection_id: str) -> None:
+    def __init__(self, token: str, collection_id: str, image_field: str = "") -> None:
         self._collection_id = collection_id
+        self._image_field = image_field
         self._client = httpx.AsyncClient(
             base_url=WEBFLOW_API_BASE,
             headers={
@@ -103,23 +106,79 @@ class WebflowPublisher(Publisher):
             },
         )
 
-    async def add_draft(self, item: dict) -> str:
-        """Create a draft CMS item and return the Webflow-assigned item ID."""
+    async def upload_asset(
+        self, image_bytes: bytes, filename: str, site_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Upload image bytes to Webflow Assets via the two-step presigned S3 flow.
+
+        Returns {"id": asset_id, "hostedUrl": url} or None on failure.
+        """
+        file_hash = hashlib.md5(image_bytes).hexdigest()
+        try:
+            resp = await self._client.post(
+                f"/sites/{site_id}/assets",
+                json={"fileName": filename, "fileHash": file_hash},
+            )
+            if not resp.is_success:
+                logger.warning(
+                    "Webflow asset metadata POST failed: HTTP %s — %s",
+                    resp.status_code,
+                    resp.text,
+                )
+                return None
+            data = resp.json()
+            upload_url = data.get("uploadUrl")
+            upload_details = data.get("uploadDetails", {})
+            asset_id = data.get("id", "")
+            hosted_url = data.get("hostedUrl", "")
+
+            if not upload_url:
+                logger.warning("Webflow asset response missing uploadUrl")
+                return None
+
+            # POST multipart to the presigned S3 URL using a plain httpx client (no auth headers)
+            form_data = {key: (None, str(value)) for key, value in upload_details.items()}
+            form_data["file"] = (filename, image_bytes, "image/png")
+            async with httpx.AsyncClient() as s3_client:
+                s3_resp = await s3_client.post(upload_url, files=form_data)
+            if not s3_resp.is_success:
+                logger.warning(
+                    "Webflow S3 upload failed: HTTP %s — %s",
+                    s3_resp.status_code,
+                    s3_resp.text[:200],
+                )
+                return None
+
+            return {"id": asset_id, "hostedUrl": hosted_url}
+        except Exception as exc:
+            logger.warning("Webflow asset upload failed: %s", exc)
+            return None
+
+    async def add_draft(self, item: dict, is_draft: bool = True) -> str:
+        """Create a CMS item (draft or live) and return the Webflow-assigned item ID."""
         title = _truncate_title(item.get("title", ""))
         slug = _make_slug(item.get("title", ""))
+        field_data: Dict[str, Any] = {
+            "name": title,
+            "slug": slug,
+            "meta-title": item.get("seo_title", title)[:60],
+            "meta-description": item.get("seo_description", "")[:160],
+            "content": _reformat_sources(item.get("html", "")),
+            "published-date": item.get("published_at", ""),
+            "min-read": item.get("reading_time", "1 min read"),
+            "featured-on-top": "false",
+        }
+        image_asset = item.get("image_asset")
+        if image_asset and self._image_field:
+            field_data[self._image_field] = {
+                "fileId": image_asset.get("id", ""),
+                "url": image_asset.get("hostedUrl", ""),
+                "alt": f"Featured image for: {title}",
+            }
         payload = {
-            "fieldData": {
-                "name": title,
-                "slug": slug,
-                "meta-title": item.get("seo_title", title)[:60],
-                "meta-description": item.get("seo_description", "")[:160],
-                "content": _reformat_sources(item.get("html", "")),
-                "published-date": item.get("published_at", ""),
-                "min-read": item.get("reading_time", "1 min read"),
-                "featured-on-top": "false",
-            },
+            "fieldData": field_data,
             "isArchived": False,
-            "isDraft": True,
+            "isDraft": is_draft,
         }
         resp = await self._client.post(
             f"/collections/{self._collection_id}/items",
