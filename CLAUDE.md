@@ -26,6 +26,10 @@ uv run horizon-blog --items 3,7,15           # generate posts for specific row n
 
 # Publish blog posts to Webflow (run after horizon-blog)
 uv run horizon-publish                       # deduplicates, generates SEO, pushes drafts to Webflow
+uv run horizon-publish --publish             # publish live (not drafts)
+uv run horizon-publish --generate-image      # generate AI cover images and attach to posts
+uv run horizon-publish --dry-run             # preview without writing to Webflow; saves images locally
+uv run horizon-publish --max-drafts 5        # override max_drafts from config at runtime
 
 # Upload artifacts to TrueFoundry ML repo
 uv run horizon-upload-artifacts --repo-name my-ml-repo        # upload files directly
@@ -97,7 +101,7 @@ Token usage is tracked in-memory by `src/ai/tokens.py` and printed after each ru
 
 ```
 src/blog/
-  models.py              ← ScoringDimension, ScoredItem, BlogPost, BlogConfig, PublisherConfig
+  models.py              ← ScoringDimension, ScoredItem, BlogPost, BlogConfig, PublisherConfig, ImageGenerationConfig
   viewer.py              ← generate_results_html(): self-contained HTML viewer for blog posts
   upload_artifacts.py    ← horizon-upload-artifacts CLI (TrueFoundry ML repo)
   profiles/              ← prompt profiles (news, engineer, ...)
@@ -114,9 +118,10 @@ src/blog/
     runner.py            ← horizon-publish CLI entry point
     webflow.py           ← WebflowPublisher (Staged Items API, offset pagination)
     deduplicator.py      ← title-normalised + semantic dedup
-    loader.py            ← read Jekyll front matter, convert Markdown → HTML
+    loader.py            ← read Jekyll front matter, convert Markdown → HTML; passes dimensions/inclusion_path through
     converter.py         ← convert_markdown(), reading_time()
     seo.py               ← generate_seo(): one AI call per post for title + meta description
+    image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → Stability AI PNG bytes
     publisher.py         ← abstract Publisher base class
 ```
 
@@ -134,7 +139,11 @@ src/blog/
 `publisher/runner.py::_run()` orchestrates:
 1. Load all `posts.json` manifests; dump HTML snapshots to `artifacts/webflow_content/`
 2. Fetch recent Webflow items; exact-title dedup (`deduplicator.py`)
-3. For each kept post: semantic dedup → generate SEO → push draft to Webflow
+3. For each kept post: semantic dedup → generate SEO → optionally generate cover image → push to Webflow
+
+**Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates a Stability AI image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls Stability AI through the TrueFoundry gateway. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
+
+**Draft vs. live**: defaults to draft mode; pass `--publish` to publish live.
 
 ### Multi-dimensional scoring and gate paths
 
@@ -153,19 +162,31 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
 
 ```json
 "blog": {
-  "max_posts": 4,
-  "output_dir": "artifacts/blog-posts",
-  "prompt_profile": "news",
-  "audience_context": "",
-  "platform_context": "",
+  "generator": {
+    "max_posts": 10,
+    "profile": "engineer"
+  },
   "publisher": {
     "collection_id": "<webflow-collection-id>",
-    "deduplication_time_window": 14
+    "site_id": "<webflow-site-id>",
+    "image_field": "cover-image",
+    "max_drafts": 10,
+    "deduplication_time_window": 14,
+    "image_generation": {
+      "enabled": false,
+      "model": "image-gen/stability.stable-image-core-v1-1",
+      "base_url_env": "TFY_BASE_URL",
+      "api_key_env": "TFY_API_KEY",
+      "aspect_ratio": "16:9"
+    }
   }
 }
 ```
 
-Set `"prompt_profile": "all"` to run all profiles; outputs land in separate subdirectories.
+- `site_id` is required for image upload to Webflow; image generation is skipped with a warning if it is absent.
+- `image_generation.enabled: false` means images are only generated when `--generate-image` is passed on the CLI.
+- `base_url_env` / `api_key_env` point to env var names for the TrueFoundry gateway credentials.
+- Set `"profile": "all"` to run all generator profiles; outputs land in separate subdirectories.
 
 ---
 
