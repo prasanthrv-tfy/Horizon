@@ -102,6 +102,7 @@ async def _publish_batch(
                         title,
                         post.get("tags", []),
                         post.get("seo_description", ""),
+                        post.get("markdown", "")[:500],
                         ai_client,
                     )
                     COVER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)

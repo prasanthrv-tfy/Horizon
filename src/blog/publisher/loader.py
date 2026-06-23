@@ -26,6 +26,8 @@ def load_post(entry: dict, base_dir: Path) -> dict:
         "published_at": published_at,
         "reading_time": read_time,
         "score": float(entry.get("score", 0.0)),
+        "dimensions": entry.get("dimensions", {}),
+        "inclusion_path": entry.get("inclusion_path", ""),
     }
 
 
