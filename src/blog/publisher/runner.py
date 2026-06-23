@@ -6,6 +6,7 @@ Reads from artifacts/blog-posts/*/posts.json manifests.
 
 import asyncio
 import os
+import random
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from .deduplicator import deduplicate_posts, semantic_is_duplicate
 from .converter import wrap_html
 from .loader import load_manifest, load_post
 from .seo import generate_seo
+from .category import assign_category
 from .image_generator import generate_image_prompt, generate_image
 
 BLOG_POSTS_DIR = Path("artifacts/blog-posts")
@@ -60,6 +62,8 @@ async def _publish_batch(
     image_gen_config=None,
     site_id: str = "",
     dry_run: bool = False,
+    authors: list | None = None,
+    categories: list | None = None,
 ) -> tuple[int, List[Tuple[dict, Path]], int]:
     """Push each post through semantic dedup → SEO → [image] → Webflow.
 
@@ -89,6 +93,17 @@ async def _publish_batch(
 
         try:
             post = load_post(entry, base_dir)
+            if authors:
+                post["author_id"] = random.choice(authors)["id"]
+            if categories:
+                category_id = await assign_category(
+                    title,
+                    post.get("tags", []),
+                    categories,
+                    ai_client,
+                )
+                if category_id:
+                    post["category_id"] = category_id
             console.print(f"      generating SEO...")
             seo = await generate_seo(title, post["markdown"], ai_client)
             post.update(seo)
@@ -198,11 +213,31 @@ async def _run(
 
     ai_client = create_ai_client(config.ai)
     publisher = create_publisher(publisher_cfg, token)
+    authors_collection_id = publisher_cfg.authors_collection_id if publisher_cfg else ""
+    categories_collection_id = publisher_cfg.categories_collection_id if publisher_cfg else ""
 
     try:
         run_start = datetime.now(tz=timezone.utc)
         if dry_run:
             console.print("[yellow]⚠ DRY RUN — no changes will be made to Webflow[/yellow]\n")
+
+        authors: list = []
+        if authors_collection_id:
+            console.print(f"👤 Fetching authors (collection {authors_collection_id})...")
+            authors = await publisher.list_authors(authors_collection_id)
+            if authors:
+                console.print(f"   Found {len(authors)} author(s)\n")
+            else:
+                console.print("   [yellow]⚠ No authors found — posts will publish without author assignment[/yellow]\n")
+
+        categories: list = []
+        if categories_collection_id:
+            console.print(f"🏷  Fetching categories (collection {categories_collection_id})...")
+            categories = await publisher.list_categories(categories_collection_id)
+            if categories:
+                console.print(f"   Found {len(categories)} categorie(s)\n")
+            else:
+                console.print("   [yellow]⚠ No categories found — posts will publish without category assignment[/yellow]\n")
 
         console.print(f"🔍 Fetching Webflow items (collection {collection_id}, past {dedup_days} day(s))...")
         existing_items = await publisher.list_items(since=since)
@@ -250,6 +285,8 @@ async def _run(
             image_gen_config=image_gen_config,
             site_id=site_id,
             dry_run=dry_run,
+            authors=authors,
+            categories=categories,
         )
 
         total_elapsed = (datetime.now(tz=timezone.utc) - run_start).total_seconds()

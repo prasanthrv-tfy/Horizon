@@ -78,6 +78,10 @@ class PublisherConfig(BaseModel):
     collection_id: str = ""
     site_id: str = ""
     image_field: str = ""
+    authors_collection_id: str = ""
+    author_field: str = "author"
+    categories_collection_id: str = ""
+    category_field: str = "category-2"
     deduplication_time_window: int = 14  # days
     max_drafts: Optional[int] = None
     image_generation: ImageGenerationConfig = ImageGenerationConfig()

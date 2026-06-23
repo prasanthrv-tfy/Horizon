@@ -94,9 +94,11 @@ def _make_slug(title: str, max_length: int = 60) -> str:
 class WebflowPublisher(Publisher):
     """Webflow CMS implementation of Publisher (Staged Items API)."""
 
-    def __init__(self, token: str, collection_id: str, image_field: str = "") -> None:
+    def __init__(self, token: str, collection_id: str, image_field: str = "", author_field: str = "author", category_field: str = "category-2") -> None:
         self._collection_id = collection_id
         self._image_field = image_field
+        self._author_field = author_field
+        self._category_field = category_field
         self._client = httpx.AsyncClient(
             base_url=WEBFLOW_API_BASE,
             headers={
@@ -175,6 +177,12 @@ class WebflowPublisher(Publisher):
                 "url": image_asset.get("hostedUrl", ""),
                 "alt": f"Featured image for: {title}",
             }
+        author_id = item.get("author_id")
+        if author_id:
+            field_data[self._author_field] = author_id
+        category_id = item.get("category_id")
+        if category_id:
+            field_data[self._category_field] = category_id
         payload = {
             "fieldData": field_data,
             "isArchived": False,
@@ -189,6 +197,60 @@ class WebflowPublisher(Publisher):
                 f"Webflow add_draft failed: HTTP {resp.status_code} — {resp.text}"
             )
         return str(resp.json().get("id", ""))
+
+    async def list_authors(self, authors_collection_id: str) -> List[Dict[str, Any]]:
+        """Fetch all items from the Authors collection. Returns empty list on error."""
+        all_authors: List[Dict[str, Any]] = []
+        offset = 0
+        try:
+            while True:
+                resp = await self._client.get(
+                    f"/collections/{authors_collection_id}/items",
+                    params={"limit": _PAGE_LIMIT, "offset": offset},
+                )
+                if not resp.is_success:
+                    logger.warning(
+                        "Failed to fetch authors (HTTP %s) — publishing without author assignment",
+                        resp.status_code,
+                    )
+                    return []
+                data = resp.json()
+                items = data.get("items", [])
+                all_authors.extend(items)
+                offset += len(items)
+                if len(items) < _PAGE_LIMIT:
+                    break
+        except Exception as exc:
+            logger.warning("Error fetching authors: %s — publishing without author assignment", exc)
+            return []
+        return all_authors
+
+    async def list_categories(self, categories_collection_id: str) -> List[Dict[str, Any]]:
+        """Fetch all items from the Categories collection. Returns empty list on error."""
+        all_categories: List[Dict[str, Any]] = []
+        offset = 0
+        try:
+            while True:
+                resp = await self._client.get(
+                    f"/collections/{categories_collection_id}/items",
+                    params={"limit": _PAGE_LIMIT, "offset": offset},
+                )
+                if not resp.is_success:
+                    logger.warning(
+                        "Failed to fetch categories (HTTP %s) — publishing without category assignment",
+                        resp.status_code,
+                    )
+                    return []
+                data = resp.json()
+                items = data.get("items", [])
+                all_categories.extend(items)
+                offset += len(items)
+                if len(items) < _PAGE_LIMIT:
+                    break
+        except Exception as exc:
+            logger.warning("Error fetching categories: %s — publishing without category assignment", exc)
+            return []
+        return all_categories
 
     async def _fetch_page(self, offset: int) -> Dict[str, Any]:
         """Fetch one page of collection items. Raises on rate-limit or HTTP error."""
