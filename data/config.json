@@ -227,7 +227,7 @@
     "publisher": {
       "collection_id": "69fdb1f79e0eefe055360e10",
       "site_id": "6291b38507a5238373237679",
-      "image_field": "cover-image",
+      "image_field": "thumbnail-image",
       "authors_collection_id": "6a3224aed371aeee7a308803",
       "author_field": "author",
       "categories_collection_id": "6a2aaa54b5b7c7ee7f6b81b6",

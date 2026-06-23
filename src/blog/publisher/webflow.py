@@ -163,12 +163,13 @@ class WebflowPublisher(Publisher):
         field_data: Dict[str, Any] = {
             "name": title,
             "slug": slug,
-            "meta-title": item.get("seo_title", title)[:60],
-            "meta-description": item.get("seo_description", "")[:160],
-            "content": _reformat_sources(item.get("html", "")),
-            "published-date": item.get("published_at", ""),
+            "random": item.get("seo_title", title)[:60],
+            "short-description": item.get("seo_description", "")[:160],
+            "news-description": _reformat_sources(item.get("html", "")),
+            "date": item.get("published_at", ""),
             "min-read": item.get("reading_time", "1 min read"),
-            "featured-on-top": "false",
+            "featured-on-top": False,
+            "latest-news": True,
         }
         image_asset = item.get("image_asset")
         if image_asset and self._image_field:
