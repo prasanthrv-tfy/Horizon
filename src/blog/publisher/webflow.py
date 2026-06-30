@@ -94,7 +94,7 @@ def _make_slug(title: str, max_length: int = 60) -> str:
 class WebflowPublisher(Publisher):
     """Webflow CMS implementation of Publisher (Staged Items API)."""
 
-    def __init__(self, token: str, collection_id: str, image_field: str = "", author_field: str = "author", category_field: str = "category-2") -> None:
+    def __init__(self, token: str, collection_id: str, image_field: str = "cover-image", author_field: str = "author", category_field: str = "categories") -> None:
         self._collection_id = collection_id
         self._image_field = image_field
         self._author_field = author_field
@@ -160,16 +160,22 @@ class WebflowPublisher(Publisher):
         """Create a CMS item (draft or live) and return the Webflow-assigned item ID."""
         title = _truncate_title(item.get("title", ""))
         slug = _make_slug(item.get("title", ""))
+        seo_description = _truncate_title(item.get("seo_description", ""), 160)
         field_data: Dict[str, Any] = {
             "name": title,
             "slug": slug,
-            "random": item.get("seo_title", title)[:60],
-            "short-description": item.get("seo_description", "")[:160],
-            "news-description": _reformat_sources(item.get("html", "")),
-            "date": item.get("published_at", ""),
+            "meta-title": _truncate_title(item.get("seo_title", title), 60),
+            "meta-description": seo_description,
+            "description": seo_description,
+            "content": _reformat_sources(item.get("html", "")),
+            "published-date": item.get("published_at", ""),
             "min-read": item.get("reading_time", "1 min read"),
             "featured-on-top": False,
             "latest-news": True,
+            "main-hero-news": False,
+            "highlighted-news": False,
+            "premium-content": False,
+            "focus-articles": False,
         }
         image_asset = item.get("image_asset")
         if image_asset and self._image_field:
@@ -183,7 +189,7 @@ class WebflowPublisher(Publisher):
             field_data[self._author_field] = author_id
         category_id = item.get("category_id")
         if category_id:
-            field_data[self._category_field] = category_id
+            field_data[self._category_field] = [category_id]
         payload = {
             "fieldData": field_data,
             "isArchived": False,
@@ -194,9 +200,17 @@ class WebflowPublisher(Publisher):
             json=payload,
         )
         if not resp.is_success:
-            raise RuntimeError(
-                f"Webflow add_draft failed: HTTP {resp.status_code} — {resp.text}"
-            )
+            if resp.status_code == 400 and "slug" in resp.text.lower():
+                suffix = hashlib.md5(title.encode()).hexdigest()[:6]
+                payload["fieldData"]["slug"] = f"{slug}-{suffix}"
+                resp = await self._client.post(
+                    f"/collections/{self._collection_id}/items",
+                    json=payload,
+                )
+            if not resp.is_success:
+                raise RuntimeError(
+                    f"Webflow add_draft failed: HTTP {resp.status_code} — {resp.text}"
+                )
         return str(resp.json().get("id", ""))
 
     async def list_authors(self, authors_collection_id: str) -> List[Dict[str, Any]]:

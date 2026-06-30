@@ -77,13 +77,14 @@ class PublisherConfig(BaseModel):
 
     collection_id: str = ""
     site_id: str = ""
-    image_field: str = ""
+    image_field: str = "cover-image"
     authors_collection_id: str = ""
     author_field: str = "author"
     categories_collection_id: str = ""
-    category_field: str = "category-2"
+    category_field: str = "categories"
+    publish_mode: str = "draft"  # "draft" | "live"
     deduplication_time_window: int = 14  # days
-    max_drafts: Optional[int] = None
+    max_publish: int = 0  # 0 = publish all
     image_generation: ImageGenerationConfig = ImageGenerationConfig()
 
 

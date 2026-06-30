@@ -56,7 +56,7 @@ async def _publish_batch(
     publisher,
     ai_client,
     console: Console,
-    max_drafts: int | None,
+    max_publish: int,
     is_draft: bool = True,
     generate_image_flag: bool = False,
     image_gen_config=None,
@@ -69,7 +69,7 @@ async def _publish_batch(
 
     Returns (pushed_count, semantic_skipped_list, failed_count).
     """
-    console.print(f"📤 Publishing up to {max_drafts if max_drafts is not None else 'all'} new post(s)...\n")
+    console.print(f"📤 Publishing up to {max_publish if max_publish > 0 else 'all'} new post(s)...\n")
     pushed = 0
     failed = 0
     semantic_skipped: List[Tuple[dict, Path]] = []
@@ -77,7 +77,7 @@ async def _publish_batch(
     do_image = wants_image and (bool(site_id) or dry_run)
 
     for entry, base_dir in posts:
-        if max_drafts is not None and pushed >= max_drafts:
+        if max_publish > 0 and pushed >= max_publish:
             break
 
         title = entry.get("title", "")
@@ -141,6 +141,12 @@ async def _publish_batch(
                 except Exception as img_exc:
                     console.print(f"      [yellow]⚠ cover image error — {img_exc} — continuing without image[/yellow]")
 
+            if not dry_run and "image_asset" not in post:
+                console.print(f"      [yellow]⊘ skipping: cover-image is required — re-run with --generate-image[/yellow]")
+                failed += 1
+                console.print()
+                continue
+
             mode_label = "draft" if is_draft else "live"
             if dry_run:
                 console.print(f"      [dim][dry-run] would push {mode_label} to Webflow[/dim]")
@@ -150,6 +156,7 @@ async def _publish_batch(
                 item_id = await publisher.add_draft(post, is_draft=is_draft)
                 elapsed_push = (datetime.now(tz=timezone.utc) - push_start).total_seconds()
                 console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
+                await asyncio.sleep(1)
             pushed += 1
         except Exception as exc:
             console.print(f"      [red]✗ failed — {exc}[/red]")
@@ -161,8 +168,8 @@ async def _publish_batch(
 
 async def _run(
     console: Console,
-    max_drafts: int | None = None,
-    publish: bool = False,
+    max_publish: int = 0,
+    publish: str = "",
     generate_image_flag: bool = False,
     dry_run: bool = False,
 ) -> None:
@@ -279,8 +286,8 @@ async def _run(
             publisher,
             ai_client,
             console,
-            max_drafts,
-            is_draft=not publish,
+            max_publish,
+            is_draft=(publish or publisher_cfg.publish_mode) != "live",
             generate_image_flag=generate_image_flag,
             image_gen_config=image_gen_config,
             site_id=site_id,
@@ -306,15 +313,18 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Publish generated blog posts to Webflow.")
     parser.add_argument(
-        "--max-drafts",
+        "--max-publish",
         metavar="N",
         type=int,
-        help="Maximum number of drafts to push. Posts are ranked by their blog score; top N are published.",
+        default=None,
+        help="Maximum number of posts to publish. 0 publishes all. Posts are ranked by score; top N are published.",
     )
     parser.add_argument(
         "--publish",
-        action="store_true",
-        help="Publish items live to Webflow immediately instead of creating drafts.",
+        choices=["draft", "live"],
+        metavar="{draft,live}",
+        default=None,
+        help="Publishing mode. Overrides publish_mode in config. Use 'live' to publish immediately.",
     )
     parser.add_argument(
         "--generate-image",
@@ -330,21 +340,20 @@ def main() -> None:
 
     load_dotenv()
 
-    # CLI overrides config; fall back to publisher.max_drafts from config
-    max_drafts = args.max_drafts
-    if max_drafts is None:
+    # CLI overrides config; fall back to publisher.max_publish from config (0 = all)
+    max_publish = args.max_publish
+    if max_publish is None:
         from src.storage.manager import StorageManager as _SM
         _cfg = _SM().load_config()
-        if _cfg.blog and _cfg.blog.publisher:
-            max_drafts = _cfg.blog.publisher.max_drafts
+        max_publish = _cfg.blog.publisher.max_publish if (_cfg.blog and _cfg.blog.publisher) else 0
 
     console = Console(record=True)
     console.print("[bold cyan]📤 Horizon Publish — Starting...[/bold cyan]\n")
     try:
         asyncio.run(_run(
             console,
-            max_drafts=max_drafts,
-            publish=args.publish,
+            max_publish=max_publish,
+            publish=args.publish or "",
             generate_image_flag=args.generate_image,
             dry_run=args.dry_run,
         ))
