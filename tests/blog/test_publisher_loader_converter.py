@@ -94,7 +94,8 @@ def test_load_post_no_front_matter(tmp_path):
     assert post["published_at"].startswith("2026-05-26")
     assert post["url"] == ""
     assert post["tags"] == []
-    assert "<h1>" in post["html"]
+    assert "No front matter here at all" in post["html"]
+    assert "<h1>" not in post["html"]  # leading H1 is stripped; Webflow template renders the title
 
 
 def test_load_post_markdown_in_body(tmp_path):

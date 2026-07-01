@@ -125,27 +125,22 @@ async def _publish_batch(
                     console.print(f"      [dim]image prompt saved — {COVER_IMAGES_DIR / f'{slug}.prompt.txt'}[/dim]")
                     image_bytes = await generate_image(image_prompt, image_gen_config)
                     if image_bytes:
+                        save_path = COVER_IMAGES_DIR / f"{slug}.png"
+                        save_path.write_bytes(image_bytes)
+                        console.print(f"      [dim]cover image saved — {save_path}[/dim]")
                         if dry_run:
-                            save_path = COVER_IMAGES_DIR / f"{slug}.png"
-                            save_path.write_bytes(image_bytes)
-                            console.print(f"      [dim][dry-run] cover image saved — {save_path}[/dim]")
+                            console.print(f"      [dim][dry-run] skipping Webflow upload[/dim]")
                         else:
                             image_asset = await publisher.upload_asset(image_bytes, f"{slug}.png", site_id)
                             if image_asset:
                                 post["image_asset"] = image_asset
                                 console.print(f"      [dim]cover image uploaded — {image_asset.get('hostedUrl', '')}[/dim]")
                             else:
-                                console.print(f"      [yellow]⚠ cover image upload failed — continuing without image[/yellow]")
+                                console.print(f"      [yellow]⚠ cover image upload failed — saved locally at {save_path}[/yellow]")
                     else:
                         console.print(f"      [yellow]⚠ cover image generation failed — continuing without image[/yellow]")
                 except Exception as img_exc:
                     console.print(f"      [yellow]⚠ cover image error — {img_exc} — continuing without image[/yellow]")
-
-            if not dry_run and "image_asset" not in post:
-                console.print(f"      [yellow]⊘ skipping: cover-image is required — re-run with --generate-image[/yellow]")
-                failed += 1
-                console.print()
-                continue
 
             mode_label = "draft" if is_draft else "live"
             if dry_run:
@@ -274,10 +269,10 @@ async def _run(
         existing_items_for_dedup = [
             {
                 "title": item.get("fieldData", {}).get("name", ""),
-                "description": item.get("fieldData", {}).get("meta-description", ""),
+                "description": item.get("fieldData", {}).get("short-description", ""),
             }
             for item in existing_items
-            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("meta-description")
+            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("short-description")
         ]
 
         pushed, semantic_skipped, failed = await _publish_batch(

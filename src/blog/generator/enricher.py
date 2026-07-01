@@ -36,14 +36,14 @@ async def _enrich_one(
             return
         except Exception as fetch_err:
             console.print(
-                f"   [yellow]⚠ fetch failed ({fetch_err.__class__.__name__}), using search for:[/yellow] {item.title[:60]}"
+                f"   [yellow]⚠ fetch failed ({fetch_err.__class__.__name__}), using search for:[/yellow] {item.title}"
             )
 
         text = fetcher.search_fallback(item.title, item.ai_tags or [])
         if text.strip():
             item.content = text
         else:
-            console.print(f"   [red]✗ enrichment failed for:[/red] {item.title[:60]}")
+            console.print(f"   [red]✗ enrichment failed for:[/red] {item.title}")
 
 
 async def enrich_thin_items(items: List[ContentItem], console: Console) -> None:

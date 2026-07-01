@@ -7,7 +7,7 @@ import httpx
 from src.blog.publisher.webflow import WebflowPublisher
 
 
-def _make_capturing_publisher(captured: dict, image_field="cover-image",
+def _make_capturing_publisher(captured: dict, image_field="thumbnail-image",
                                author_field="author", category_field="categories"):
     """Build a publisher that records the request body sent to Webflow."""
     def handler(request: httpx.Request) -> httpx.Response:
@@ -56,22 +56,22 @@ def test_add_draft_field_names_match_schema():
         "reading_time": "3 min read",
     }))
     fd = captured["body"]["fieldData"]
-    assert "meta-title" in fd
-    assert "meta-description" in fd
-    assert "description" in fd
-    assert "content" in fd
-    assert "published-date" in fd
+    assert "random" in fd
+    assert "short-description" in fd
+    assert "news-description" in fd
+    assert "date" in fd
     assert fd["featured-on-top"] is False
     assert fd["latest-news"] is True
     assert fd["main-hero-news"] is False
     assert fd["highlighted-news"] is False
     assert fd["premium-content"] is False
-    assert fd["focus-articles"] is False
-    # Old field names must not appear
-    assert "random" not in fd
-    assert "short-description" not in fd
-    assert "news-description" not in fd
-    assert "date" not in fd
+    # Removed fields must not appear
+    assert "meta-title" not in fd
+    assert "meta-description" not in fd
+    assert "description" not in fd
+    assert "content" not in fd
+    assert "published-date" not in fd
+    assert "focus-articles" not in fd
 
 
 def test_add_draft_author_id_injected():
@@ -88,11 +88,11 @@ def test_add_draft_author_id_absent_key_not_present():
     assert "author" not in captured["body"]["fieldData"]
 
 
-def test_add_draft_category_id_injected_as_list():
+def test_add_draft_category_id_injected():
     captured = {}
-    publisher = _make_capturing_publisher(captured)
+    publisher = _make_capturing_publisher(captured, category_field="category-2")
     asyncio.run(publisher.add_draft({"title": "T", "category_id": "cat-xyz"}))
-    assert captured["body"]["fieldData"]["categories"] == ["cat-xyz"]
+    assert captured["body"]["fieldData"]["category-2"] == "cat-xyz"
 
 
 def test_add_draft_category_id_absent_key_not_present():
@@ -109,7 +109,7 @@ def test_add_draft_image_asset_injected():
         "title": "T",
         "image_asset": {"id": "img-id", "hostedUrl": "https://cdn.example.com/img.png"},
     }))
-    img = captured["body"]["fieldData"]["cover-image"]
+    img = captured["body"]["fieldData"]["thumbnail-image"]
     assert img["fileId"] == "img-id"
     assert img["url"] == "https://cdn.example.com/img.png"
 
@@ -130,14 +130,14 @@ def test_add_draft_raises_on_api_error():
         assert "422" in str(exc)
 
 
-def test_add_draft_retries_with_suffix_on_slug_collision():
-    """A 400 'slug already exists' response triggers a retry with a hash suffix."""
+def _make_slug_collision_publisher(fail_count: int):
+    """Publisher that returns a slug-conflict 400 for the first `fail_count` calls."""
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         calls.append(body["fieldData"]["slug"])
-        if len(calls) == 1:
+        if len(calls) <= fail_count:
             return httpx.Response(400, text="slug already exists")
         return httpx.Response(200, json={"id": "retry-item-id"})
 
@@ -151,10 +151,31 @@ def test_add_draft_retries_with_suffix_on_slug_collision():
         base_url="https://api.webflow.com/v2",
         transport=transport,
     )
+    return publisher, calls
+
+
+def test_add_draft_retries_with_suffix_on_slug_collision():
+    """A 400 'slug already exists' response triggers a retry with a UUID suffix."""
+    publisher, calls = _make_slug_collision_publisher(fail_count=1)
     item_id = asyncio.run(publisher.add_draft({"title": "Test Collision"}))
     assert item_id == "retry-item-id"
     assert len(calls) == 2
-    assert calls[1] == calls[0] + "-" + calls[1].split("-")[-1]  # suffix appended
+    base_slug = calls[0]
+    retry_slug = calls[1]
+    assert retry_slug.startswith(base_slug + "-")
+    suffix = retry_slug[len(base_slug) + 1:]
+    assert len(suffix) == 8
+    assert all(c in "0123456789abcdef" for c in suffix)
+
+
+def test_add_draft_retries_multiple_times_on_repeated_slug_collision():
+    """Repeated slug conflicts each trigger a new UUID retry (up to 5 attempts)."""
+    publisher, calls = _make_slug_collision_publisher(fail_count=3)
+    item_id = asyncio.run(publisher.add_draft({"title": "Repeated Collision"}))
+    assert item_id == "retry-item-id"
+    assert len(calls) == 4
+    suffixes = [slug.split("-")[-1] for slug in calls[1:]]
+    assert len(set(suffixes)) == len(suffixes), "each retry should use a distinct UUID suffix"
 
 
 def test_add_draft_meta_description_word_boundary():
@@ -164,8 +185,8 @@ def test_add_draft_meta_description_word_boundary():
     long_desc = ("word " * 40).strip()  # 200 chars, all spaces between words
     asyncio.run(publisher.add_draft({"title": "T", "seo_description": long_desc}))
     fd = captured["body"]["fieldData"]
-    assert len(fd["meta-description"]) <= 160
-    assert not fd["meta-description"].endswith(" ")
+    assert len(fd["short-description"]) <= 160
+    assert not fd["short-description"].endswith(" ")
     # must end at a full word, not mid-word
-    last_char = fd["meta-description"][-1]
+    last_char = fd["short-description"][-1]
     assert last_char not in (" ",), "should not end with trailing space"

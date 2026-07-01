@@ -77,7 +77,7 @@ class PublisherConfig(BaseModel):
 
     collection_id: str = ""
     site_id: str = ""
-    image_field: str = "cover-image"
+    image_field: str = "thumbnail-image"
     authors_collection_id: str = ""
     author_field: str = "author"
     categories_collection_id: str = ""
@@ -85,6 +85,7 @@ class PublisherConfig(BaseModel):
     publish_mode: str = "draft"  # "draft" | "live"
     deduplication_time_window: int = 14  # days
     max_publish: int = 0  # 0 = publish all
+    image_upload_timeout: float = 120.0  # seconds for S3 write phase; increase if uploads time out
     image_generation: ImageGenerationConfig = ImageGenerationConfig()
 
 

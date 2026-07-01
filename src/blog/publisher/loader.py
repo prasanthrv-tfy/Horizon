@@ -4,11 +4,23 @@ from pathlib import Path
 from .converter import convert_markdown, reading_time
 
 
+def _strip_leading_h1(markdown: str) -> str:
+    """Remove the first H1 line so the Webflow template title isn't duplicated."""
+    lines = markdown.split('\n')
+    for i, line in enumerate(lines):
+        if line.strip().startswith('# '):
+            lines.pop(i)
+            if i < len(lines) and not lines[i].strip():
+                lines.pop(i)
+            break
+    return '\n'.join(lines)
+
+
 def load_post(entry: dict, base_dir: Path) -> dict:
     """Read a manifest entry and its paired .md file; return a structured dict for publishing."""
     md_path = base_dir / entry["filename"]
     body = md_path.read_text(encoding="utf-8") if md_path.exists() else ""
-    html = convert_markdown(body)
+    html = convert_markdown(_strip_leading_h1(body))
     read_time = reading_time(body)
 
     published_at = entry.get("published_at", "")

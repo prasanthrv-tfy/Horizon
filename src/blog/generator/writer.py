@@ -149,8 +149,10 @@ class BlogWriter:
         content_text, comments_text = _split_content(item.content or "")
         web_context, all_results = await self._gather_web_context(item, content_text)
         engagement = _build_engagement(item.metadata)
-        sources = _build_sources(item, all_results)
-        markdown = await self._call_llm(item, language, content_text, comments_text, web_context, engagement, sources)
+        sources_raw = _build_sources(item, all_results)
+        markdown = await self._call_llm(item, language, content_text, comments_text, web_context, engagement)
+        sources_section = await self._generate_sources(sources_raw)
+        markdown = markdown.rstrip() + "\n\n" + sources_section
         title = _extract_title(markdown, fallback=item.title)
         return BlogPost(
             item_id=item.id,
@@ -179,6 +181,49 @@ class BlogWriter:
         web_context = "\n\n".join(web_sections) if web_sections else "No web search results available."
         return web_context, all_results
 
+    async def _generate_sources(self, sources_raw: str) -> str:
+        """Generate a labelled ## Sources section from a newline-joined list of raw URLs."""
+        from urllib.parse import urlparse
+
+        def _fallback(raw: str) -> str:
+            from collections import Counter
+            urls = [line.lstrip("- ").strip() for line in raw.splitlines() if line.strip()]
+            domain_counts = Counter(urlparse(u).netloc.lstrip("www.") for u in urls)
+            lines = []
+            for url in urls:
+                domain = urlparse(url).netloc.lstrip("www.")
+                if domain_counts[domain] > 1:
+                    parts = [p for p in urlparse(url).path.strip("/").split("/") if p]
+                    qualifier = "/".join(parts[:2])
+                    label = f"{domain} ({qualifier})" if qualifier else domain
+                else:
+                    label = domain or url
+                lines.append(f"- [{label}]({url})")
+            return "## Sources\n\n" + "\n".join(lines)
+
+        if not sources_raw.strip():
+            return ""
+        system = (
+            "You are formatting a sources list for a tech blog post. "
+            "Given a list of URLs, return ONLY a markdown ## Sources section. "
+            "Each source on its own line as a markdown link: - [Label](url). "
+            "The label must be the site or author name — 1 to 3 words (e.g. 'GitHub', 'MIT News', 'AWS Docs'). "
+            "If multiple URLs share the same domain, add a short path qualifier in parentheses to make each label unique "
+            "(e.g. for two GitHub repos use 'GitHub (awslabs/mcp)' and 'GitHub (BerriAI/litellm)', not both 'GitHub'). "
+            "No explanation, no extra text. Output raw Markdown only."
+        )
+        try:
+            result = (await self.client.complete(
+                system=system,
+                user=f"URLs:\n{sources_raw}",
+                json_mode=False,
+            )).strip()
+            if not re.search(r'^##\s+[Ss]ources', result, re.MULTILINE):
+                result = "## Sources\n\n" + result
+            return result
+        except Exception:
+            return _fallback(sources_raw)
+
     async def _call_llm(
         self,
         item: ContentItem,
@@ -187,7 +232,6 @@ class BlogWriter:
         comments_text: str,
         web_context: str,
         engagement: str,
-        sources: str,
     ) -> str:
         """Build prompts, call the LLM, and return clean markdown (fences stripped)."""
         language_name = LANGUAGE_NAMES.get(language, language)
@@ -219,7 +263,6 @@ class BlogWriter:
             comments_section=comments_section,
             engagement=engagement,
             web_context=web_context,
-            sources=sources,
         )
 
         markdown = await self.client.complete(

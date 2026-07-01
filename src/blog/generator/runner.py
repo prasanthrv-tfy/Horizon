@@ -140,10 +140,10 @@ async def _prefilter_duplicates(
         existing_for_dedup = [
             {
                 "title": item.get("fieldData", {}).get("name", ""),
-                "description": item.get("fieldData", {}).get("meta-description", ""),
+                "description": item.get("fieldData", {}).get("short-description", ""),
             }
             for item in webflow_items
-            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("meta-description")
+            if item.get("fieldData", {}).get("name") or item.get("fieldData", {}).get("short-description")
         ]
 
         source_for_dedup = [

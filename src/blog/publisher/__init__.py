@@ -10,4 +10,5 @@ def create_publisher(config: PublisherConfig, token: str) -> Publisher:
         image_field=config.image_field,
         author_field=config.author_field,
         category_field=config.category_field,
+        image_upload_timeout=config.image_upload_timeout,
     )

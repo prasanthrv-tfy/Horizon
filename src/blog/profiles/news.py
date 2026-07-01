@@ -60,9 +60,6 @@ Write the blog post in {language_name}. The post should be 800-1500 words and fo
 5. **Background Context**: Provide enough background for a reader without deep domain expertise to understand the news. Explain key concepts, technologies, or prior art.
 6. **Community Reaction**: If community comments are provided, summarize the sentiment — agreements, disagreements, concerns, notable insights.
 7. **Looking Ahead / Implications**: What might this lead to? What are the open questions? What should readers watch for?
-8. **Sources and References**: End with a ## Sources section listing each source as:
-- [Label](url)
-The label must be the site name or author name only (1–3 words, e.g. "GitHub", "Microsoft AI", "Simon Willison"). Do not use full page titles.
 
 **Guidelines:**
 - Base your writing on the provided content, comments, and web search results — do NOT fabricate information
@@ -89,9 +86,6 @@ The label must be the site name or author name only (1–3 words, e.g. "GitHub",
 
 **Web Search Results (for grounding and context):**
 {web_context}
-
-**Available Sources:**
-{sources}
 
 Write the blog post now in {language_name}. Output raw Markdown only.""",
     ranking_context="",  # deprecated — scoring_dimensions used instead

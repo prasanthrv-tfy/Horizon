@@ -210,7 +210,7 @@
   },
   "filtering": {
     "ai_score_threshold": 7.0,
-    "time_window_hours": 24,
+    "time_window_hours": 168,
     "topics": [
       "AI",
       "machine learning",
@@ -225,15 +225,16 @@
       "profile": "engineer"
     },
     "publisher": {
-      "collection_id": "69fdb1f79e0eefe055360e10",
-      "site_id": "6291b38507a5238373237679",
-      "image_field": "cover-image",
+      "collection_id": "6a2aaa54b5b7c7ee7f6b81b7",
+      "site_id": "6a2aaa4eb5b7c7ee7f6b8129",
+      "image_field": "thumbnail-image",
       "authors_collection_id": "6a3224aed371aeee7a308803",
       "author_field": "author",
       "categories_collection_id": "6a2aaa54b5b7c7ee7f6b81b6",
-      "category_field": "categories",
+      "category_field": "category-2",
       "publish_mode": "draft",
       "max_publish": 4,
+      "image_upload_timeout": 120.0,
       "image_generation": {
         "enabled": false,
         "model": "image-gen/stability.stable-image-core-v1-1",

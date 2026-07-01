@@ -10,6 +10,7 @@ _SOURCES_RE = re.compile(
 )
 _A_TAG_RE = re.compile(r'<a href="([^"]+)">(.*?)</a>', re.DOTALL)
 _BARE_URL_RE = re.compile(r'https?://[^\s<>"\']+')
+_LIST_TAG_RE = re.compile(r'<(ol|ul)(\s[^>]*)?>', re.IGNORECASE)
 
 
 def _domain(url: str) -> str:
@@ -17,7 +18,7 @@ def _domain(url: str) -> str:
 
 
 def _normalize_source_item(raw: str) -> str:
-    """Normalise any source item to '<p>label: <a href="url">url</a></p>'.
+    """Normalise any source item to '<li><a href="url">label</a></li>'.
 
     Handles all AI output patterns: bare URL, markdown link with label,
     label+bare-URL, label+markdown-link, and label+url-as-link-text.
@@ -34,35 +35,91 @@ def _normalize_source_item(raw: str) -> str:
             label = link_text
         else:
             label = _domain(url)
-        return f'<p>{label}: <a href="{url}">{url}</a></p>'
+        return f'<li><a href="{url}">{label}</a></li>'
     # No <a> — bare URL text (converter._URL_RE skips URLs preceded by >)
     url_match = _BARE_URL_RE.search(raw)
     if url_match:
         url = url_match.group(0)
         prefix = raw[:url_match.start()].strip().rstrip(':').strip()
         label = prefix if prefix else _domain(url)
-        return f'<p>{label}: <a href="{url}">{url}</a></p>'
-    return f'<p>{raw}</p>'
+        return f'<li><a href="{url}">{label}</a></li>'
+    return f'<li>{raw}</li>'
+
+
+def _style_lists(html: str) -> str:
+    """Inject inline styles into <ol> and <ul> so Webflow renders them correctly.
+
+    Webflow's CMS API accepts raw HTML but does not apply page-level CSS to
+    injected list elements, causing them to render without indentation or markers.
+    """
+    def _replace(m: re.Match) -> str:
+        tag = m.group(1).lower()
+        existing_attrs = m.group(2) or ""
+        list_style = "decimal" if tag == "ol" else "disc"
+        return f'<{tag}{existing_attrs} style="list-style-type:{list_style};padding-left:1.5em;">'
+    return _LIST_TAG_RE.sub(_replace, html)
+
+
+def _deduplicate_source_labels(items: list) -> list:
+    """Append URL path context to source labels that appear more than once.
+
+    e.g. three items labeled 'GitHub' become 'GitHub (awslabs/mcp)',
+    'GitHub (a2aproject/a2a-go)', 'GitHub (BerriAI/litellm)'.
+    Works for any domain: 'AWS Blog', 'arXiv', etc.
+    """
+    from collections import Counter
+    parsed = []
+    for item in items:
+        a_match = _A_TAG_RE.search(item)
+        if a_match:
+            parsed.append((a_match.group(2).strip(), a_match.group(1), True))
+        else:
+            parsed.append((item, "", False))
+
+    label_counts = Counter(label for label, _, has_link in parsed if has_link)
+
+    result = []
+    for label, url, has_link in parsed:
+        if has_link and label_counts[label] > 1:
+            parts = [p for p in urlparse(url).path.strip("/").split("/") if p]
+            qualifier = "/".join(parts[:2])
+            new_label = f"{label} ({qualifier})" if qualifier else label
+            result.append(f'<li><a href="{url}">{new_label}</a></li>')
+        elif has_link:
+            result.append(f'<li><a href="{url}">{label}</a></li>')
+        else:
+            result.append(item)
+    return result
 
 
 def _reformat_sources(html: str) -> str:
-    """Convert the Sources <ul>/<li> block to normalised <p> elements.
+    """Normalise the Sources <ul>/<li> block so each item is '<li><a href="url">Label</a></li>'.
 
-    Webflow strips block elements whose only content is a bare <a> tag.
-    This converts every source to 'label: url' with the label always outside
-    the link so Webflow preserves it regardless of AI output format.
+    Also deduplicates labels that share the same text by appending URL path context,
+    e.g. two 'GitHub' items become 'GitHub (awslabs/mcp)' and 'GitHub (BerriAI/litellm)'.
     """
     def _replace(m: re.Match) -> str:
         heading = m.group(1)
-        items = re.findall(r'<li>(.*?)</li>', m.group(2), re.DOTALL)
-        return heading + ''.join(_normalize_source_item(item) for item in items)
+        raw_items = re.findall(r'<li>(.*?)</li>', m.group(2), re.DOTALL)
+        normalized = [_normalize_source_item(item) for item in raw_items]
+        normalized = _deduplicate_source_labels(normalized)
+        return heading + '<ul>' + ''.join(normalized) + '</ul>'
     return _SOURCES_RE.sub(_replace, html)
 
+import asyncio
 import hashlib
+import uuid
 
 import httpx
 
 from .publisher import Publisher
+
+_RETRYABLE_UPLOAD_ERRORS = (
+    httpx.WriteTimeout,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.TransportError,
+)
 
 WEBFLOW_API_BASE = "https://api.webflow.com/v2"
 _PAGE_LIMIT = 100
@@ -94,11 +151,12 @@ def _make_slug(title: str, max_length: int = 60) -> str:
 class WebflowPublisher(Publisher):
     """Webflow CMS implementation of Publisher (Staged Items API)."""
 
-    def __init__(self, token: str, collection_id: str, image_field: str = "cover-image", author_field: str = "author", category_field: str = "categories") -> None:
+    def __init__(self, token: str, collection_id: str, image_field: str = "thumbnail-image", author_field: str = "author", category_field: str = "categories", image_upload_timeout: float = 120.0) -> None:
         self._collection_id = collection_id
         self._image_field = image_field
         self._author_field = author_field
         self._category_field = category_field
+        self._image_upload_timeout = image_upload_timeout
         self._client = httpx.AsyncClient(
             base_url=WEBFLOW_API_BASE,
             headers={
@@ -106,6 +164,7 @@ class WebflowPublisher(Publisher):
                 "accept": "application/json",
                 "content-type": "application/json",
             },
+            timeout=httpx.Timeout(30.0),
         )
 
     async def upload_asset(
@@ -113,69 +172,111 @@ class WebflowPublisher(Publisher):
     ) -> Optional[Dict[str, Any]]:
         """Upload image bytes to Webflow Assets via the two-step presigned S3 flow.
 
+        Retries up to 3 times with exponential backoff on transient network errors.
         Returns {"id": asset_id, "hostedUrl": url} or None on failure.
         """
+        for attempt in range(3):
+            result = await self._try_upload_asset(image_bytes, filename, site_id)
+            if result is not None:
+                return result
+            if attempt < 2:
+                wait_seconds = 2 ** (attempt + 1)  # 2s, 4s
+                logger.warning(
+                    "Asset upload attempt %d/3 failed — retrying in %ds",
+                    attempt + 1,
+                    wait_seconds,
+                )
+                await asyncio.sleep(wait_seconds)
+        logger.warning("Asset upload failed after 3 attempts — post will publish without image")
+        return None
+
+    async def _try_upload_asset(
+        self, image_bytes: bytes, filename: str, site_id: str
+    ) -> Optional[Dict[str, Any]]:
         file_hash = hashlib.md5(image_bytes).hexdigest()
+        # Step 1: register the asset with Webflow and get the presigned S3 upload URL
         try:
+            logger.debug("Webflow asset step 1: POST /sites/%s/assets (file=%s, hash=%s)", site_id, filename, file_hash)
             resp = await self._client.post(
                 f"/sites/{site_id}/assets",
                 json={"fileName": filename, "fileHash": file_hash},
             )
             if not resp.is_success:
                 logger.warning(
-                    "Webflow asset metadata POST failed: HTTP %s — %s",
+                    "Webflow asset step 1 failed: HTTP %s — %s",
                     resp.status_code,
                     resp.text,
                 )
                 return None
-            data = resp.json()
-            upload_url = data.get("uploadUrl")
-            upload_details = data.get("uploadDetails", {})
-            asset_id = data.get("id", "")
-            hosted_url = data.get("hostedUrl", "")
+        except Exception as exc:
+            logger.warning("Webflow asset step 1 (metadata POST) raised: %s", exc, exc_info=True)
+            return None
 
-            if not upload_url:
-                logger.warning("Webflow asset response missing uploadUrl")
-                return None
+        data = resp.json()
+        upload_url = data.get("uploadUrl")
+        upload_details = data.get("uploadDetails", {})
+        asset_id = data.get("id", "")
+        hosted_url = data.get("hostedUrl", "")
 
-            # POST multipart to the presigned S3 URL using a plain httpx client (no auth headers)
+        if not upload_url:
+            logger.warning("Webflow asset step 1 response missing uploadUrl — full response: %s", data)
+            return None
+
+        # Step 2: POST multipart to the presigned S3 URL using a plain httpx client (no auth headers)
+        s3_timeout = httpx.Timeout(connect=10.0, write=self._image_upload_timeout, read=60.0, pool=10.0)
+        try:
+            logger.debug(
+                "Webflow asset step 2: POST %s (fields=%s)",
+                upload_url,
+                list(upload_details.keys()),
+            )
             form_data = {key: (None, str(value)) for key, value in upload_details.items()}
             form_data["file"] = (filename, image_bytes, "image/png")
-            async with httpx.AsyncClient() as s3_client:
+            async with httpx.AsyncClient(timeout=s3_timeout) as s3_client:
                 s3_resp = await s3_client.post(upload_url, files=form_data)
             if not s3_resp.is_success:
                 logger.warning(
-                    "Webflow S3 upload failed: HTTP %s — %s",
+                    "Webflow asset step 2 (S3 upload) failed: HTTP %s — %s",
                     s3_resp.status_code,
-                    s3_resp.text[:200],
+                    s3_resp.text[:500],
                 )
                 return None
-
-            return {"id": asset_id, "hostedUrl": hosted_url}
-        except Exception as exc:
-            logger.warning("Webflow asset upload failed: %s", exc)
+        except _RETRYABLE_UPLOAD_ERRORS as exc:
+            logger.warning(
+                "Webflow asset step 2 (S3 upload to %s) raised retryable error: %s",
+                upload_url,
+                exc,
+            )
             return None
+        except Exception as exc:
+            logger.warning(
+                "Webflow asset step 2 (S3 upload to %s) raised: %s",
+                upload_url,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+        return {"id": asset_id, "hostedUrl": hosted_url}
 
     async def add_draft(self, item: dict, is_draft: bool = True) -> str:
         """Create a CMS item (draft or live) and return the Webflow-assigned item ID."""
-        title = _truncate_title(item.get("title", ""))
-        slug = _make_slug(item.get("title", ""))
+        title = item.get("title", "")
+        slug = _make_slug(title)
         seo_description = _truncate_title(item.get("seo_description", ""), 160)
         field_data: Dict[str, Any] = {
             "name": title,
             "slug": slug,
-            "meta-title": _truncate_title(item.get("seo_title", title), 60),
-            "meta-description": seo_description,
-            "description": seo_description,
-            "content": _reformat_sources(item.get("html", "")),
-            "published-date": item.get("published_at", ""),
+            "random": _truncate_title(item.get("seo_title", title), 60),
+            "short-description": seo_description,
+            "news-description": _style_lists(_reformat_sources(item.get("html", ""))),
+            "date": item.get("published_at", ""),
             "min-read": item.get("reading_time", "1 min read"),
             "featured-on-top": False,
             "latest-news": True,
             "main-hero-news": False,
             "highlighted-news": False,
             "premium-content": False,
-            "focus-articles": False,
         }
         image_asset = item.get("image_asset")
         if image_asset and self._image_field:
@@ -189,7 +290,7 @@ class WebflowPublisher(Publisher):
             field_data[self._author_field] = author_id
         category_id = item.get("category_id")
         if category_id:
-            field_data[self._category_field] = [category_id]
+            field_data[self._category_field] = category_id
         payload = {
             "fieldData": field_data,
             "isArchived": False,
@@ -199,18 +300,21 @@ class WebflowPublisher(Publisher):
             f"/collections/{self._collection_id}/items",
             json=payload,
         )
-        if not resp.is_success:
+        for _ in range(5):
+            if resp.is_success:
+                break
             if resp.status_code == 400 and "slug" in resp.text.lower():
-                suffix = hashlib.md5(title.encode()).hexdigest()[:6]
-                payload["fieldData"]["slug"] = f"{slug}-{suffix}"
+                payload["fieldData"]["slug"] = f"{slug}-{uuid.uuid4().hex[:8]}"
                 resp = await self._client.post(
                     f"/collections/{self._collection_id}/items",
                     json=payload,
                 )
-            if not resp.is_success:
-                raise RuntimeError(
-                    f"Webflow add_draft failed: HTTP {resp.status_code} — {resp.text}"
-                )
+            else:
+                break
+        if not resp.is_success:
+            raise RuntimeError(
+                f"Webflow add_draft failed: HTTP {resp.status_code} — {resp.text}"
+            )
         return str(resp.json().get("id", ""))
 
     async def list_authors(self, authors_collection_id: str) -> List[Dict[str, Any]]:

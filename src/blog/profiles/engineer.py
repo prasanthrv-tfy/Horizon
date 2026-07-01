@@ -113,10 +113,7 @@ Do not force opinion onto informational posts, and do not flatten analysis posts
 
 Keep all technical terms, model names, library names, and commands in English. Write the post in {language_name}.
 
-End with a ## Sources section. List each source on its own line using this exact markdown link format:
-- [Label](url)
-
-The label must be the site name or author name only — 1 to 3 words, e.g. "GitHub", "Microsoft AI", "Simon Willison", "arXiv", "MIT News", "Hugging Face". Do not use full page titles or include " | Site Name" suffixes. Output raw Markdown only.
+Output raw Markdown only.
 {audience_context_section}
 {platform_context_section}
 """,
@@ -135,9 +132,6 @@ The label must be the site name or author name only — 1 to 3 words, e.g. "GitH
 
 **Web Search Results (for technical grounding):**
 {web_context}
-
-**Available Sources:**
-{sources}
 
 Write the blog post now in {language_name}. Output raw Markdown only.""",
     research_system="""You are helping a technical writer find deep, specific context for a blog post aimed at ML engineers.
