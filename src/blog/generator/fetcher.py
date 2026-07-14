@@ -11,9 +11,21 @@ import sys
 import httpx
 import trafilatura
 from ddgs import DDGS
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 _FETCH_MAX_CHARS = 2000
 _SEARCH_MIN_CHARS = 200
+
+
+def _is_transient_fetch_error(exc: BaseException) -> bool:
+    """Retryable: timeouts, dropped connections, and 5xx/429. Not retryable: 4xx (likely bot-block)."""
+    if isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return False
+
 
 # Several news CDNs (Medium, Substack, some paywalled sites) return 403 or bot pages
 # without standard browser headers. Spoofing Chrome headers is required for reliable extraction.
@@ -49,7 +61,7 @@ class ContentFetcher:
     async def __aenter__(self):
         self._client = httpx.AsyncClient(
             follow_redirects=True,
-            timeout=10.0,
+            timeout=httpx.Timeout(connect=15.0, read=15.0, write=10.0, pool=10.0),
             headers=_BROWSER_HEADERS,
         )
         return self
@@ -58,6 +70,11 @@ class ContentFetcher:
         if self._client:
             await self._client.aclose()
 
+    @retry(
+        retry=retry_if_exception(_is_transient_fetch_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=0.5, max=5),
+    )
     async def fetch_url(self, url: str) -> str:
         """Fetch URL and return article text (first 2000 chars). Raises on failure."""
         if self._client is None:
