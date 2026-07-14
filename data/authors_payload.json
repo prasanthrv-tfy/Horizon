@@ -1,0 +1,92 @@
+[
+  {
+    "designation": "Software Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Software Engineer focused on building custom AI solutions for enterprise customers, with an emphasis on scalable deployment pipelines.",
+    "linkedin-url": null,
+    "name": "Alice Mercer",
+    "slug": "alice-mercer"
+  },
+  {
+    "designation": "Machine Learning Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Machine Learning Engineer specializing in large-scale model training infrastructure and GPU cluster orchestration.",
+    "linkedin-url": null,
+    "name": "Ben Kowalski",
+    "slug": "ben-kowalski"
+  },
+  {
+    "designation": "Data Scientist",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Data Scientist working on experimentation frameworks and statistical methods for evaluating model performance in production.",
+    "linkedin-url": null,
+    "name": "Priya Nair",
+    "slug": "priya-nair"
+  },
+  {
+    "designation": "Solutions Architect",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Solutions Architect who designs cloud-native deployment patterns for AI workloads, with a focus on cost efficiency and reliability.",
+    "linkedin-url": null,
+    "name": "James Callahan",
+    "slug": "james-callahan"
+  },
+  {
+    "designation": "Developer Relations Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Developer Relations Engineer who writes technical guides and sample projects to help engineers integrate LLMs into their applications.",
+    "linkedin-url": null,
+    "name": "Sofia Ramos",
+    "slug": "sofia-ramos"
+  },
+  {
+    "designation": "Research Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Research Engineer exploring efficient fine-tuning techniques and retrieval-augmented generation for domain-specific applications.",
+    "linkedin-url": null,
+    "name": "Daniel Osei",
+    "slug": "daniel-osei"
+  },
+  {
+    "designation": "Platform Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Platform Engineer building the infrastructure that powers reliable, observable model-serving pipelines at scale.",
+    "linkedin-url": null,
+    "name": "Mei-Lin Chen",
+    "slug": "mei-lin-chen"
+  },
+  {
+    "designation": "Technical Writer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Technical Writer translating complex ML infrastructure concepts into clear documentation and tutorials for practitioners.",
+    "linkedin-url": null,
+    "name": "Aaron Patel",
+    "slug": "aaron-patel"
+  },
+  {
+    "designation": "AI Product Manager",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "AI Product Manager focused on shipping developer tools that make it easier to deploy and monitor machine learning models.",
+    "linkedin-url": null,
+    "name": "Laura Fitzgerald",
+    "slug": "laura-fitzgerald"
+  },
+  {
+    "designation": "Data Platform Engineer",
+    "meta-title": null,
+    "meta-description": null,
+    "description": "Data Platform Engineer designing pipelines that move and transform large datasets for training and evaluation workflows.",
+    "linkedin-url": null,
+    "name": "Marcus Webb",
+    "slug": "marcus-webb"
+  }
+]

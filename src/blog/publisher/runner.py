@@ -50,6 +50,59 @@ def _dump_html(posts: List[Tuple[dict, Path]], console: Console) -> None:
 COVER_IMAGES_DIR = Path("artifacts/cover-images")
 
 
+async def _generate_cover_image(
+    title: str,
+    post: dict,
+    publisher,
+    ai_client,
+    image_gen_config,
+    site_id: str,
+    dry_run: bool,
+    console: Console,
+) -> dict | None:
+    """Generate a cover image, save it locally, and upload to Webflow unless dry-run.
+
+    Returns the Webflow image_asset dict on success, None on any failure.
+    """
+    slug = title.lower().replace(" ", "-")[:40]
+    try:
+        console.print(f"      generating cover image...")
+        image_prompt = await generate_image_prompt(
+            title,
+            post.get("tags", []),
+            post.get("seo_description", ""),
+            post.get("markdown", "")[:500],
+            ai_client,
+        )
+        COVER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        (COVER_IMAGES_DIR / f"{slug}.prompt.txt").write_text(image_prompt, encoding="utf-8")
+        console.print(f"      [dim]image prompt saved — {COVER_IMAGES_DIR / f'{slug}.prompt.txt'}[/dim]")
+
+        image_bytes = await generate_image(image_prompt, image_gen_config)
+        if not image_bytes:
+            console.print(f"      [yellow]⚠ cover image generation failed — continuing without image[/yellow]")
+            return None
+
+        save_path = COVER_IMAGES_DIR / f"{slug}.png"
+        save_path.write_bytes(image_bytes)
+        console.print(f"      [dim]cover image saved — {save_path}[/dim]")
+
+        if dry_run:
+            console.print(f"      [dim][dry-run] skipping Webflow upload[/dim]")
+            return None
+
+        image_asset = await publisher.upload_asset(image_bytes, f"{slug}.png", site_id)
+        if image_asset:
+            console.print(f"      [dim]cover image uploaded — {image_asset.get('hostedUrl', '')}[/dim]")
+            return image_asset
+        else:
+            console.print(f"      [yellow]⚠ cover image upload failed — saved locally at {save_path}[/yellow]")
+            return None
+    except Exception as exc:
+        console.print(f"      [yellow]⚠ cover image error — {exc} — continuing without image[/yellow]")
+        return None
+
+
 async def _publish_batch(
     posts: List[Tuple[dict, Path]],
     existing_items_for_dedup: list,
@@ -58,7 +111,7 @@ async def _publish_batch(
     console: Console,
     max_publish: int,
     is_draft: bool = True,
-    generate_image_flag: bool = False,
+    cover_image_enabled: bool = False,
     image_gen_config=None,
     site_id: str = "",
     dry_run: bool = False,
@@ -73,8 +126,6 @@ async def _publish_batch(
     pushed = 0
     failed = 0
     semantic_skipped: List[Tuple[dict, Path]] = []
-    wants_image = generate_image_flag or (image_gen_config and image_gen_config.enabled)
-    do_image = wants_image and (bool(site_id) or dry_run)
 
     for entry, base_dir in posts:
         if max_publish > 0 and pushed >= max_publish:
@@ -109,38 +160,12 @@ async def _publish_batch(
             post.update(seo)
             console.print(f"      seo_title: {post.get('seo_title', '')!r}")
 
-            if do_image:
-                try:
-                    console.print(f"      generating cover image...")
-                    slug = title.lower().replace(" ", "-")[:40]
-                    image_prompt = await generate_image_prompt(
-                        title,
-                        post.get("tags", []),
-                        post.get("seo_description", ""),
-                        post.get("markdown", "")[:500],
-                        ai_client,
-                    )
-                    COVER_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-                    (COVER_IMAGES_DIR / f"{slug}.prompt.txt").write_text(image_prompt, encoding="utf-8")
-                    console.print(f"      [dim]image prompt saved — {COVER_IMAGES_DIR / f'{slug}.prompt.txt'}[/dim]")
-                    image_bytes = await generate_image(image_prompt, image_gen_config)
-                    if image_bytes:
-                        save_path = COVER_IMAGES_DIR / f"{slug}.png"
-                        save_path.write_bytes(image_bytes)
-                        console.print(f"      [dim]cover image saved — {save_path}[/dim]")
-                        if dry_run:
-                            console.print(f"      [dim][dry-run] skipping Webflow upload[/dim]")
-                        else:
-                            image_asset = await publisher.upload_asset(image_bytes, f"{slug}.png", site_id)
-                            if image_asset:
-                                post["image_asset"] = image_asset
-                                console.print(f"      [dim]cover image uploaded — {image_asset.get('hostedUrl', '')}[/dim]")
-                            else:
-                                console.print(f"      [yellow]⚠ cover image upload failed — saved locally at {save_path}[/yellow]")
-                    else:
-                        console.print(f"      [yellow]⚠ cover image generation failed — continuing without image[/yellow]")
-                except Exception as img_exc:
-                    console.print(f"      [yellow]⚠ cover image error — {img_exc} — continuing without image[/yellow]")
+            if cover_image_enabled:
+                image_asset = await _generate_cover_image(
+                    title, post, publisher, ai_client, image_gen_config, site_id, dry_run, console
+                )
+                if image_asset:
+                    post["image_asset"] = image_asset
 
             mode_label = "draft" if is_draft else "live"
             if dry_run:
@@ -165,7 +190,7 @@ async def _run(
     console: Console,
     max_publish: int = 0,
     publish: str = "",
-    generate_image_flag: bool = False,
+    generate_image: bool = False,
     dry_run: bool = False,
 ) -> None:
     token = os.environ.get("WEBFLOW_TOKEN")
@@ -206,8 +231,8 @@ async def _run(
 
     image_gen_config = publisher_cfg.image_generation if publisher_cfg else None
     site_id = publisher_cfg.site_id if publisher_cfg else ""
-    do_image = generate_image_flag or (image_gen_config and image_gen_config.enabled)
-    if do_image and not site_id:
+    cover_image_enabled = (generate_image or (image_gen_config and image_gen_config.enabled)) and (bool(site_id) or dry_run)
+    if (generate_image or (image_gen_config and image_gen_config.enabled)) and not site_id and not dry_run:
         console.print(
             "[yellow]⚠ Image generation requested but blog.publisher.site_id is not set — "
             "skipping cover image generation.[/yellow]\n"
@@ -258,14 +283,12 @@ async def _run(
             console.print("[yellow]No new posts to publish — all are already in Webflow.[/yellow]")
             return
 
-        # Sort by score descending so the highest-ranked posts are published first
         kept_with_scores = sorted(
             kept,
             key=lambda x: x[0].get("score", 0.0),
             reverse=True,
         )
 
-        # Build existing item list for semantic dedup (title + meta-description)
         existing_items_for_dedup = [
             {
                 "title": item.get("fieldData", {}).get("name", ""),
@@ -283,7 +306,7 @@ async def _run(
             console,
             max_publish,
             is_draft=(publish or publisher_cfg.publish_mode) != "live",
-            generate_image_flag=generate_image_flag,
+            cover_image_enabled=cover_image_enabled,
             image_gen_config=image_gen_config,
             site_id=site_id,
             dry_run=dry_run,
@@ -335,7 +358,6 @@ def main() -> None:
 
     load_dotenv()
 
-    # CLI overrides config; fall back to publisher.max_publish from config (0 = all)
     max_publish = args.max_publish
     if max_publish is None:
         from src.storage.manager import StorageManager as _SM
@@ -349,7 +371,7 @@ def main() -> None:
             console,
             max_publish=max_publish,
             publish=args.publish or "",
-            generate_image_flag=args.generate_image,
+            generate_image=args.generate_image,
             dry_run=args.dry_run,
         ))
     finally:

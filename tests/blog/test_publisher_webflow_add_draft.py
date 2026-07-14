@@ -2,9 +2,12 @@
 
 import asyncio
 import json
+import re
 import httpx
 
-from src.blog.publisher.webflow import WebflowPublisher
+from src.blog.publisher.webflow import WebflowPublisher, _make_slug
+
+_WEBFLOW_SLUG_RE = re.compile(r'(^$)|^[_a-zA-Z0-9][-_a-zA-Z0-9]*$')
 
 
 def _make_capturing_publisher(captured: dict, image_field="thumbnail-image",
@@ -176,6 +179,27 @@ def test_add_draft_retries_multiple_times_on_repeated_slug_collision():
     assert len(calls) == 4
     suffixes = [slug.split("-")[-1] for slug in calls[1:]]
     assert len(set(suffixes)) == len(suffixes), "each retry should use a distinct UUID suffix"
+
+
+def test_make_slug_strips_accented_characters_to_valid_ascii():
+    """Accented Latin letters must degrade to ASCII, not survive and break Webflow's slug pattern."""
+    slug = _make_slug("Café société: naïve résumé of ML")
+    assert _WEBFLOW_SLUG_RE.match(slug)
+    assert slug == "cafe-societe-naive-resume-of-ml"
+
+
+def test_make_slug_falls_back_to_uuid_for_non_latin_title():
+    """A title with no ASCII-representable characters must not sanitize to an unstable empty slug."""
+    slug = _make_slug("日本語のタイトル")
+    assert _WEBFLOW_SLUG_RE.match(slug)
+    assert slug.startswith("post-")
+
+
+def test_add_draft_slug_with_accents_matches_webflow_pattern():
+    captured = {}
+    publisher = _make_capturing_publisher(captured)
+    asyncio.run(publisher.add_draft({"title": "Café société: naïve résumé of ML"}))
+    assert _WEBFLOW_SLUG_RE.match(captured["body"]["fieldData"]["slug"])
 
 
 def test_add_draft_meta_description_word_boundary():

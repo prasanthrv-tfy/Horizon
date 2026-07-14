@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Foundation Models",
+    "covers": "Open-weight LLM releases, context length advances, model architecture, benchmarks and evals",
+    "examples": ["GLM-5.2 open weights with 1M context", "LifeSciBench agentic research benchmarks"]
+  },
+  {
+    "name": "Agentic Systems",
+    "covers": "Agent frameworks, tool discovery, multi-agent orchestration, hardware and robot integration",
+    "examples": ["Hugging Face Agentic Resource Discovery", "Strands Robots + Hugging Face Hub", "agentic benchmarking on open models"]
+  },
+  {
+    "name": "MLOps & Inference",
+    "covers": "Model deployment, serving infrastructure, container optimization, pre-release evaluation pipelines",
+    "examples": ["Amazon SageMaker container caching for scale-out", "OpenAI deployment simulation for pre-release behavior"]
+  },
+  {
+    "name": "AI Safety & Security",
+    "covers": "Privacy attacks on ML systems, agent guardrails, AI control frameworks, red-teaming",
+    "examples": ["MosaicLeaks privacy tests for deep research agents", "AWS Bedrock InvokeGuardrailChecks", "Google DeepMind AI Control Roadmap"]
+  },
+  {
+    "name": "Research & Insights",
+    "covers": "Novel architectures, engineering patterns, fine-tuning methods, embodied and spatial reasoning research",
+    "examples": ["MIT robot memory and spatial-temporal reasoning", "Hugging Face LoRA alternatives guide"]
+  },
+  {
+    "name": "Platform & Ecosystem",
+    "covers": "Major provider launches, new API capabilities, ecosystem tooling from key labs",
+    "examples": ["New API features from OpenAI, Anthropic, Google, Meta, Mistral", "Hugging Face Hub integrations and tooling releases"]
+  }
+]

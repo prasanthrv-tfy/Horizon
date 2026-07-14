@@ -1,5 +1,6 @@
-import json
 import logging
+
+from .utils import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,7 @@ async def generate_seo(title: str, markdown: str, ai_client) -> dict:
             system=_SYSTEM,
             user=_USER_TMPL.format(title=title, excerpt=excerpt),
         )
-        # Strip markdown code fences if present
-        cleaned = response.strip().strip("```json").strip("```").strip()
-        data = json.loads(cleaned)
+        data = parse_llm_json(response)
         seo_title = str(data.get("seo_title", title))[:60]
         seo_description = str(data.get("seo_description", ""))[:160]
         return {"seo_title": seo_title, "seo_description": seo_description}

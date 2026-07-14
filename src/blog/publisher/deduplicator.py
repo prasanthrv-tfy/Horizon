@@ -1,8 +1,9 @@
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+from .utils import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ async def batch_semantic_dedup(
             published_items="\n".join(pub_lines),
         )
         raw = await ai_client.complete(system=_BATCH_DEDUP_SYSTEM, user=user_prompt)
-        data = json.loads(raw)
+        data = parse_llm_json(raw)
         duplicate_indices = data.get("duplicates", [])
         return {source_items[i]["id"] for i in duplicate_indices if 0 <= i < len(source_items)}
     except Exception as exc:
@@ -148,7 +149,7 @@ async def semantic_is_duplicate(
         numbered = "\n".join(lines)
         user_prompt = _SEMANTIC_DEDUP_USER.format(new_title=title, existing_items=numbered)
         raw = await ai_client.complete(system=_SEMANTIC_DEDUP_SYSTEM, user=user_prompt)
-        data = json.loads(raw)
+        data = parse_llm_json(raw)
         is_dup = bool(data.get("is_duplicate", False))
         matched = data.get("matched_title") or None
         return is_dup, matched

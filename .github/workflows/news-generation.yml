@@ -14,6 +14,12 @@ on:
       max_posts:
         description: 'Maximum number of blog posts to generate'
         default: '1'
+      publish_mode:
+        description: 'Webflow publish mode (draft / live)'
+        default: 'live'
+      max_publish:
+        description: 'Maximum number of posts to push to Webflow'
+        default: ''
       dry_run:
         description: 'Skip Webflow publish step'
         type: boolean
@@ -23,8 +29,10 @@ jobs:
   pipeline:
     uses: prasanthrv-tfy/Horizon/.github/workflows/pipeline.yml@blog
     with:
-      hours:     ${{ inputs.hours     || '6' }}
-      profile:   ${{ inputs.profile   || 'engineer' }}
-      max_posts: ${{ inputs.max_posts || '1' }}
-      dry_run:   ${{ inputs.dry_run   == true }}
+      hours:        ${{ inputs.hours        || '6' }}
+      profile:      ${{ inputs.profile      || 'engineer' }}
+      max_posts:    ${{ inputs.max_posts    || '1' }}
+      publish_mode: ${{ inputs.publish_mode || 'live' }}
+      max_publish:  ${{ inputs.max_publish  || '' }}
+      dry_run:      ${{ inputs.dry_run      == true }}
     secrets: inherit

@@ -123,6 +123,7 @@ src/blog/
     seo.py               ← generate_seo(): one AI call per post for title + meta description
     image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → Stability AI PNG bytes
     publisher.py         ← abstract Publisher base class
+    category.py          ← assign_category(): one LLM call to pick best-matching Webflow category
 ```
 
 ### Generator flow
@@ -139,7 +140,7 @@ src/blog/
 `publisher/runner.py::_run()` orchestrates:
 1. Load all `posts.json` manifests; dump HTML snapshots to `artifacts/webflow_content/`
 2. Fetch recent Webflow items; exact-title dedup (`deduplicator.py`)
-3. For each kept post: semantic dedup → generate SEO → optionally generate cover image → push to Webflow
+3. For each kept post: semantic dedup → generate SEO → assign category → optionally generate cover image → push to Webflow
 
 **Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates a Stability AI image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls Stability AI through the TrueFoundry gateway. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
 
@@ -163,15 +164,20 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
 ```json
 "blog": {
   "generator": {
-    "max_posts": 10,
+    "max_posts": 4,
     "profile": "engineer"
   },
   "publisher": {
-    "collection_id": "<webflow-collection-id>",
+    "collection_id": "<webflow-news-collection-id>",
     "site_id": "<webflow-site-id>",
-    "image_field": "cover-image",
-    "max_drafts": 10,
-    "deduplication_time_window": 14,
+    "image_field": "thumbnail-image",
+    "authors_collection_id": "<webflow-authors-collection-id>",
+    "author_field": "author",
+    "categories_collection_id": "<webflow-categories-collection-id>",
+    "category_field": "category-2",
+    "publish_mode": "draft",
+    "max_publish": 4,
+    "image_upload_timeout": 120.0,
     "image_generation": {
       "enabled": false,
       "model": "image-gen/stability.stable-image-core-v1-1",
@@ -183,10 +189,73 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
 }
 ```
 
+- `publish_mode`: `"draft"` by default; CLI `--publish` overrides to `"live"`.
+- `max_publish`: maximum posts to push per run (overridable via `--max-drafts`).
+- `authors_collection_id` / `author_field`: Webflow authors collection used to look up and assign an author to each post.
+- `categories_collection_id` / `category_field`: Webflow categories collection used for AI-driven category assignment (`category.py`).
+- `image_upload_timeout`: seconds to wait for Stability AI image upload (default 120).
 - `site_id` is required for image upload to Webflow; image generation is skipped with a warning if it is absent.
 - `image_generation.enabled: false` means images are only generated when `--generate-image` is passed on the CLI.
 - `base_url_env` / `api_key_env` point to env var names for the TrueFoundry gateway credentials.
 - Set `"profile": "all"` to run all generator profiles; outputs land in separate subdirectories.
+
+---
+
+## Scripts
+
+### `scripts/run-pipeline.sh` — end-to-end orchestrator
+
+Runs all four stages in sequence with timestamped logging. Designed for cron.
+
+```bash
+./scripts/run-pipeline.sh                          # default: 24h window, engineer profile
+./scripts/run-pipeline.sh --hours 48 --profile all
+./scripts/run-pipeline.sh --max-posts 6
+./scripts/run-pipeline.sh --publish live --max-publish 2
+./scripts/run-pipeline.sh --dry-run                # skips publish and upload
+```
+
+Env: `ARTIFACTS_ML_REPO` — TrueFoundry ML repo name; upload stage is skipped if unset.  
+Cron example: `0 8 * * * /path/to/horizon/scripts/run-pipeline.sh >> logs/cron.log 2>&1`
+
+### `scripts/webflow/export_collection.py` — Webflow collection export
+
+Exports a Webflow collection to `artifacts/webflow/<collection>.json`. Useful for inspecting live content or seeding local test fixtures.
+
+```bash
+uv run python scripts/webflow/export_collection.py --collection news
+uv run python scripts/webflow/export_collection.py --collection authors
+uv run python scripts/webflow/export_collection.py --collection categories
+uv run python scripts/webflow/export_collection.py --collection news --since-days 30
+```
+
+Requires `WEBFLOW_TOKEN` env var. Collection IDs are resolved from `data/config.json`. Handles offset pagination (100 items/page).
+
+### `scripts/webflow/clear_collection.py` — delete every item in a Webflow collection
+
+Deletes all items in a named or arbitrary Webflow collection. Destructive — defaults to a dry-run preview; requires `--execute` (and a typed `yes` confirmation, unless `--yes` is passed) to actually delete.
+
+```bash
+uv run python scripts/webflow/clear_collection.py --collection news                  # dry-run
+uv run python scripts/webflow/clear_collection.py --collection news --execute        # deletes, asks to confirm
+uv run python scripts/webflow/clear_collection.py --collection news --execute --yes  # skip confirmation
+uv run python scripts/webflow/clear_collection.py --collection-id 6a3224... --execute --yes  # arbitrary collection ID
+```
+
+Requires `WEBFLOW_TOKEN` env var. `--collection {news,authors,categories}` resolves an ID from `data/config.json`; `--collection-id` targets any other collection directly. On a `409 Conflict` (item still referenced by another collection, e.g. a News post referencing an Author), it prints the referencing item and continues rather than aborting. To fully clear a collection with cross-references (e.g. Authors referenced by News), clear the referencing collection (`news`) first.
+
+### `scripts/webflow/publish_payload_collection.py` — create Webflow items from a JSON payload
+
+Creates items in a Webflow collection from a JSON array of `fieldData` objects (e.g. `data/authors_payload.json`), then publishes them live. Defaults to a dry-run preview; requires `--execute` (and a typed `yes` confirmation, unless `--yes` is passed) to actually create.
+
+```bash
+uv run python scripts/webflow/publish_payload_collection.py --collection authors --payload data/authors_payload.json                  # dry-run
+uv run python scripts/webflow/publish_payload_collection.py --collection authors --payload data/authors_payload.json --execute        # creates + publishes, asks to confirm
+uv run python scripts/webflow/publish_payload_collection.py --collection authors --payload data/authors_payload.json --execute --yes  # skip confirmation
+uv run python scripts/webflow/publish_payload_collection.py --collection-id 6a3224... --payload path/to/other.json --execute --yes    # arbitrary collection ID
+```
+
+Requires `WEBFLOW_TOKEN` env var. `--collection {news,authors,categories}` resolves an ID from `data/config.json`; `--collection-id` targets any other collection directly. Items are created with `isDraft: False`, but Webflow still stages new items as "Queued for publish" until a follow-up `POST .../items/publish` call — the script batches all newly created item IDs into one publish call at the end so they actually go live.
 
 ---
 

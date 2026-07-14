@@ -12,6 +12,12 @@ on:
       max_posts:
         type: string
         default: '1'
+      publish_mode:
+        type: string
+        default: 'draft'
+      max_publish:
+        type: string
+        default: ''
       dry_run:
         type: boolean
         default: false
@@ -37,6 +43,12 @@ on:
       max_posts:
         description: 'Maximum number of blog posts to generate'
         default: '1'
+      publish_mode:
+        description: 'Webflow publish mode (draft / live)'
+        default: 'draft'
+      max_publish:
+        description: 'Maximum number of posts to push to Webflow'
+        default: ''
       dry_run:
         description: 'Skip Webflow publish step'
         type: boolean
@@ -79,4 +91,6 @@ jobs:
             --hours "${{ inputs.hours || '24' }}" \
             --profile "${{ inputs.profile || 'engineer' }}" \
             ${{ inputs.max_posts != '' && format('--max-posts {0}', inputs.max_posts) || '' }} \
+            --publish "${{ inputs.publish_mode || 'draft' }}" \
+            ${{ inputs.max_publish != '' && format('--max-publish {0}', inputs.max_publish) || '' }} \
             ${{ inputs.dry_run == true && '--dry-run' || '' }}

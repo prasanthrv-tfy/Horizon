@@ -1,5 +1,6 @@
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -8,7 +9,7 @@ _SOURCES_RE = re.compile(
     r'(<h[2-4][^>]*>[Ss]ources</h[2-4]>)\s*<ul>(.*?)</ul>',
     re.DOTALL,
 )
-_A_TAG_RE = re.compile(r'<a href="([^"]+)">(.*?)</a>', re.DOTALL)
+_ANCHOR_TAG_RE = re.compile(r'<a href="([^"]+)">(.*?)</a>', re.DOTALL)
 _BARE_URL_RE = re.compile(r'https?://[^\s<>"\']+')
 _LIST_TAG_RE = re.compile(r'<(ol|ul)(\s[^>]*)?>', re.IGNORECASE)
 
@@ -24,7 +25,7 @@ def _normalize_source_item(raw: str) -> str:
     label+bare-URL, label+markdown-link, and label+url-as-link-text.
     """
     raw = raw.strip()
-    a_match = _A_TAG_RE.search(raw)
+    a_match = _ANCHOR_TAG_RE.search(raw)
     if a_match:
         url = a_match.group(1)
         link_text = a_match.group(2).strip()
@@ -70,7 +71,7 @@ def _deduplicate_source_labels(items: list) -> list:
     from collections import Counter
     parsed = []
     for item in items:
-        a_match = _A_TAG_RE.search(item)
+        a_match = _ANCHOR_TAG_RE.search(item)
         if a_match:
             parsed.append((a_match.group(2).strip(), a_match.group(1), True))
         else:
@@ -136,8 +137,9 @@ def _truncate_title(title: str, max_length: int = 60) -> str:
 
 
 def _make_slug(title: str, max_length: int = 60) -> str:
-    slug = title.lower()
-    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
+    slug = slug.lower()
+    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
     slug = re.sub(r'[\s_]+', '-', slug)
     slug = re.sub(r'-+', '-', slug)
     slug = slug.strip('-')
@@ -145,6 +147,8 @@ def _make_slug(title: str, max_length: int = 60) -> str:
         truncated = slug[:max_length]
         boundary = truncated.rfind('-')
         slug = truncated[:boundary] if boundary > 0 else truncated
+    if not slug:
+        slug = f"post-{uuid.uuid4().hex[:8]}"
     return slug
 
 

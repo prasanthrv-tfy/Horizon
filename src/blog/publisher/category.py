@@ -1,6 +1,7 @@
-import json
 import logging
 from typing import Dict, List, Optional
+
+from .utils import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,7 @@ async def assign_category(
             system=_SYSTEM,
             user=_USER_TMPL.format(title=title, tags=tags_str, category_list=category_list),
         )
-        cleaned = response.strip().strip("```json").strip("```").strip()
-        data = json.loads(cleaned)
+        data = parse_llm_json(response)
         matched_name = data.get("category")
         if not matched_name:
             return None
