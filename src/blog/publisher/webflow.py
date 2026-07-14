@@ -426,22 +426,22 @@ class WebflowPublisher(Publisher):
             )
         return resp.json()
 
-    async def publish_draft(self, item_id: str) -> None:
-        """Promote a staged draft item to live."""
+    async def publish_item(self, item_id: str) -> None:
+        """Promote a staged item to live."""
         resp = await self._client.post(
             f"/collections/{self._collection_id}/items/publish",
             json={"itemIds": [item_id]},
         )
         if not resp.is_success:
             raise RuntimeError(
-                f"Webflow publish_draft failed: HTTP {resp.status_code} — {resp.text}"
+                f"Webflow publish_item failed: HTTP {resp.status_code} — {resp.text}"
             )
         data = resp.json()
         published = data.get("publishedItemIds", [])
         errors = data.get("errors", [])
         if item_id not in published or item_id in errors:
             raise RuntimeError(
-                f"Webflow publish_draft failed for item {item_id}: "
+                f"Webflow publish_item failed for item {item_id}: "
                 f"publishedItemIds={published}, errors={errors}"
             )
 

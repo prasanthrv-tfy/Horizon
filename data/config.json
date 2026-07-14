@@ -236,7 +236,7 @@
       "max_publish": 4,
       "image_upload_timeout": 120.0,
       "image_generation": {
-        "enabled": false,
+        "enabled": true,
         "model": "image-gen/stability.stable-image-core-v1-1",
         "base_url_env": "TFY_BASE_URL",
         "api_key_env": "TFY_API_KEY",

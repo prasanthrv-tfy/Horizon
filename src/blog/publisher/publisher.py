@@ -19,8 +19,8 @@ class Publisher(ABC):
         """Retrieve a single item by its provider ID."""
 
     @abstractmethod
-    async def publish_draft(self, item_id: str) -> None:
-        """Promote a draft item to live."""
+    async def publish_item(self, item_id: str) -> None:
+        """Promote a staged item to live."""
 
     @abstractmethod
     async def delete_item(self, item_id: str) -> None:

@@ -174,6 +174,9 @@ async def _publish_batch(
                 push_start = datetime.now(tz=timezone.utc)
                 console.print(f"      pushing {mode_label} to Webflow...")
                 item_id = await publisher.add_draft(post, is_draft=is_draft)
+                if not is_draft:
+                    console.print(f"      promoting item {item_id} to live...")
+                    await publisher.publish_item(item_id)
                 elapsed_push = (datetime.now(tz=timezone.utc) - push_start).total_seconds()
                 console.print(f"      [green]✓ published — id={item_id} ({elapsed_push:.1f}s)[/green]")
                 await asyncio.sleep(1)
