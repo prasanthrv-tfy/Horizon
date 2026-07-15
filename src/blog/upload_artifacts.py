@@ -16,18 +16,39 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 ARTIFACTS_DIR = Path("artifacts")
 LOGS_DIR = Path("artifacts/logs")
+COVER_IMAGES_DIR_NAME = "cover-images"
 
 
 def _zip_artifacts(date_str: str) -> Path:
     zip_path = Path(f"{date_str}.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(ARTIFACTS_DIR.rglob("*")):
-            if file.is_file():
+            if file.is_file() and COVER_IMAGES_DIR_NAME not in file.relative_to(ARTIFACTS_DIR).parts:
                 zf.write(file, file.relative_to(ARTIFACTS_DIR.parent))
     return zip_path
+
+
+def _artifact_paths_excluding_cover_images(ArtifactPath) -> list:
+    """One ArtifactPath per top-level artifacts/ entry, skipping cover images to keep the upload small."""
+    paths = []
+    for entry in sorted(ARTIFACTS_DIR.iterdir()):
+        if entry.name == COVER_IMAGES_DIR_NAME:
+            continue
+        src = str(entry) + "/" if entry.is_dir() else str(entry)
+        paths.append(ArtifactPath(src=src, dest=f"artifacts/{entry.name}"))
+    return paths
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=2, max=10),
+)
+def _log_artifact(client, ml_repo: str, name: str, artifact_paths: list):
+    return client.log_artifact(ml_repo=ml_repo, name=name, artifact_paths=artifact_paths)
 
 
 async def _run(console: Console, ml_repo: str, as_zip: bool) -> None:
@@ -52,15 +73,11 @@ async def _run(console: Console, ml_repo: str, as_zip: bool) -> None:
             console.print(f"[green]✓[/green] Zipped {size_mb:.1f} MB → {zip_path}")
             artifact_paths = [ArtifactPath(src=str(zip_path))]
         else:
-            artifact_paths = [ArtifactPath(src=str(ARTIFACTS_DIR) + "/", dest="artifacts")]
+            artifact_paths = _artifact_paths_excluding_cover_images(ArtifactPath)
 
         with console.status(f"[cyan]Uploading to ML repo '{ml_repo}' as '{date_str}' ...[/cyan]"):
             client = get_client()
-            artifact_version = client.log_artifact(
-                ml_repo=ml_repo,
-                name=date_str,
-                artifact_paths=artifact_paths,
-            )
+            artifact_version = _log_artifact(client, ml_repo, date_str, artifact_paths)
         console.print(f"[green]✓[/green] Uploaded: {artifact_version.fqn}")
     finally:
         if zip_path and zip_path.exists():
