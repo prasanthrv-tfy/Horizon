@@ -41,7 +41,7 @@ def _build_concept_table() -> str:
 
 _PROMPT_SYSTEM = (
     "You are a cover image director for a technology publication. "
-    "Write a Stability AI image prompt for a cover image representing the given article.\n\n"
+    "Write an image generation prompt for a cover image representing the given article.\n\n"
     "Step 1 — Find the closest semantic match to the article in this visual concept table:\n"
     + _build_concept_table() +
     "\n\nStep 2 — Choose a specific instantiation of the primary concept that suits the art style "
@@ -151,7 +151,7 @@ async def generate_image_prompt(
 
 
 async def generate_image(prompt: str, config: ImageGenerationConfig) -> Optional[bytes]:
-    """Call Stability AI via TrueFoundry gateway and return raw PNG bytes, or None on failure."""
+    """Call OpenAI's gpt-image-1.5 via TrueFoundry gateway and return raw PNG bytes, or None on failure."""
     try:
         from openai import AsyncOpenAI
     except ImportError:
@@ -181,7 +181,8 @@ async def generate_image(prompt: str, config: ImageGenerationConfig) -> Optional
         response = await client.images.generate(
             model=config.model,
             prompt=prompt,
-            extra_body={"aspect_ratio": config.aspect_ratio},
+            n=1,
+            size=config.size,
         )
         item = response.data[0]
         if item.b64_json:

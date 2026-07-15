@@ -66,10 +66,10 @@ class ImageGenerationConfig(BaseModel):
     """Configuration for AI cover image generation during publishing."""
 
     enabled: bool = False
-    model: str = "image-gen/stability.stable-image-core-v1-1"
+    model: str = "openai-main/gpt-image-2"
     base_url_env: str = "TFY_BASE_URL"
     api_key_env: str = "TFY_API_KEY"
-    aspect_ratio: str = "16:9"
+    size: str = "1536x1024"
 
 
 class PublisherConfig(BaseModel):

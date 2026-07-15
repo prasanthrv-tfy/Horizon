@@ -121,7 +121,7 @@ src/blog/
     loader.py            ← read Jekyll front matter, convert Markdown → HTML; passes dimensions/inclusion_path through
     converter.py         ← convert_markdown(), reading_time()
     seo.py               ← generate_seo(): one AI call per post for title + meta description
-    image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → Stability AI PNG bytes
+    image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → OpenAI gpt-image-2 PNG bytes
     publisher.py         ← abstract Publisher base class
     category.py          ← assign_category(): one LLM call to pick best-matching Webflow category
 ```
@@ -142,7 +142,7 @@ src/blog/
 2. Fetch recent Webflow items; exact-title dedup (`deduplicator.py`)
 3. For each kept post: semantic dedup → generate SEO → assign category → optionally generate cover image → push to Webflow
 
-**Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates a Stability AI image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls Stability AI through the TrueFoundry gateway. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
+**Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates an image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls OpenAI's `gpt-image-2` through the TrueFoundry gateway. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
 
 **Draft vs. live**: defaults to draft mode; pass `--publish` to publish live.
 
@@ -180,10 +180,10 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
     "image_upload_timeout": 120.0,
     "image_generation": {
       "enabled": false,
-      "model": "image-gen/stability.stable-image-core-v1-1",
+      "model": "openai-main/gpt-image-2",
       "base_url_env": "TFY_BASE_URL",
       "api_key_env": "TFY_API_KEY",
-      "aspect_ratio": "16:9"
+      "size": "1536x1024"
     }
   }
 }
@@ -193,7 +193,7 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
 - `max_publish`: maximum posts to push per run (overridable via `--max-drafts`).
 - `authors_collection_id` / `author_field`: Webflow authors collection used to look up and assign an author to each post.
 - `categories_collection_id` / `category_field`: Webflow categories collection used for AI-driven category assignment (`category.py`).
-- `image_upload_timeout`: seconds to wait for Stability AI image upload (default 120).
+- `image_upload_timeout`: seconds to wait for image upload (default 120).
 - `site_id` is required for image upload to Webflow; image generation is skipped with a warning if it is absent.
 - `image_generation.enabled: false` means images are only generated when `--generate-image` is passed on the CLI.
 - `base_url_env` / `api_key_env` point to env var names for the TrueFoundry gateway credentials.
