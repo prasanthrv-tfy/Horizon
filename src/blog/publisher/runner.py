@@ -83,7 +83,8 @@ async def _generate_cover_image(
             console.print(f"      [yellow]⚠ cover image generation failed — continuing without image[/yellow]")
             return None
 
-        save_path = COVER_IMAGES_DIR / f"{slug}.png"
+        image_filename = f"{slug}.{image_gen_config.output_format}"
+        save_path = COVER_IMAGES_DIR / image_filename
         save_path.write_bytes(image_bytes)
         console.print(f"      [dim]cover image saved — {save_path}[/dim]")
 
@@ -91,7 +92,7 @@ async def _generate_cover_image(
             console.print(f"      [dim][dry-run] skipping Webflow upload[/dim]")
             return None
 
-        image_asset = await publisher.upload_asset(image_bytes, f"{slug}.png", site_id)
+        image_asset = await publisher.upload_asset(image_bytes, image_filename, site_id)
         if image_asset:
             console.print(f"      [dim]cover image uploaded — {image_asset.get('hostedUrl', '')}[/dim]")
             return image_asset

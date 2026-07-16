@@ -121,7 +121,7 @@ src/blog/
     loader.py            ← read Jekyll front matter, convert Markdown → HTML; passes dimensions/inclusion_path through
     converter.py         ← convert_markdown(), reading_time()
     seo.py               ← generate_seo(): one AI call per post for title + meta description
-    image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → OpenAI gpt-image-2 PNG bytes
+    image_generator.py   ← generate_image_prompt() + generate_image(): LLM prompt → OpenAI gpt-image-2 JPEG bytes
     publisher.py         ← abstract Publisher base class
     category.py          ← assign_category(): one LLM call to pick best-matching Webflow category
 ```
@@ -142,7 +142,7 @@ src/blog/
 2. Fetch recent Webflow items; exact-title dedup (`deduplicator.py`)
 3. For each kept post: semantic dedup → generate SEO → assign category → optionally generate cover image → push to Webflow
 
-**Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates an image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls OpenAI's `gpt-image-2` through the TrueFoundry gateway. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
+**Cover image generation** (`image_generator.py`): when `--generate-image` is passed (or `image_generation.enabled: true` in config), the publisher generates an image prompt via LLM (visual concept taxonomy + brand-aware color palettes + randomised art style), then calls OpenAI's `gpt-image-2` through the TrueFoundry gateway. Images are requested as JPEG (`output_format` + `output_compression` in config) to keep article load times reasonable — uncompressed PNG output can be multiple MB per image. Images are saved to `artifacts/cover-images/` and uploaded as Webflow assets. Generation failures are non-fatal — posts publish without an image. The `--dry-run` flag saves images locally without writing to Webflow.
 
 **Draft vs. live**: defaults to draft mode; pass `--publish` to publish live.
 
@@ -183,7 +183,10 @@ Each profile is a Python file in `src/blog/profiles/` exporting `PROFILE = BlogP
       "model": "openai-main/gpt-image-2",
       "base_url_env": "TFY_BASE_URL",
       "api_key_env": "TFY_API_KEY",
-      "size": "1536x1024"
+      "size": "1536x1024",
+      "quality": "high",
+      "output_format": "jpeg",
+      "output_compression": 80
     }
   }
 }

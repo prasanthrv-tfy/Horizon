@@ -70,6 +70,9 @@ class ImageGenerationConfig(BaseModel):
     base_url_env: str = "TFY_BASE_URL"
     api_key_env: str = "TFY_API_KEY"
     size: str = "1536x1024"
+    quality: str = "high"
+    output_format: str = "jpeg"
+    output_compression: int = 80
 
 
 class PublisherConfig(BaseModel):

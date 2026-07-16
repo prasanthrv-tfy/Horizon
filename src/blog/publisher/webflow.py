@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -234,8 +235,9 @@ class WebflowPublisher(Publisher):
                 upload_url,
                 list(upload_details.keys()),
             )
+            content_type = mimetypes.guess_type(filename)[0] or "image/png"
             form_data = {key: (None, str(value)) for key, value in upload_details.items()}
-            form_data["file"] = (filename, image_bytes, "image/png")
+            form_data["file"] = (filename, image_bytes, content_type)
             async with httpx.AsyncClient(timeout=s3_timeout) as s3_client:
                 s3_resp = await s3_client.post(upload_url, files=form_data)
             if not s3_resp.is_success:

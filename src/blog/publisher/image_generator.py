@@ -183,6 +183,9 @@ async def generate_image(prompt: str, config: ImageGenerationConfig) -> Optional
             prompt=prompt,
             n=1,
             size=config.size,
+            quality=config.quality,
+            output_format=config.output_format,
+            output_compression=config.output_compression,
         )
         item = response.data[0]
         if item.b64_json:

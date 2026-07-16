@@ -240,7 +240,10 @@
         "model": "openai-main/gpt-image-2",
         "base_url_env": "TFY_BASE_URL",
         "api_key_env": "TFY_API_KEY",
-        "size": "1536x1024"
+        "size": "1536x1024",
+        "quality": "high",
+        "output_format": "jpeg",
+        "output_compression": 80
       }
     }
   }
