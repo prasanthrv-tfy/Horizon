@@ -5,8 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from tenacity import Future, RetryError
+
 import src.ai.analyzer as analyzer_module
-from src.ai.analyzer import ContentAnalyzer
+from src.ai.analyzer import ContentAnalyzer, _describe_error
 from src.ai.prompting.analysis import analysis_system_prompt
 from src.models import ContentArtifact, ContentItem, SourceType
 from src.processing import ProfileRegistry
@@ -66,6 +68,52 @@ def test_analyze_batch_sleeps_between_items_when_throttle_configured(monkeypatch
     asyncio.run(analyzer.analyze_batch(items))
 
     assert sleep_calls == [1.5, 1.5]
+
+
+def _retry_error_wrapping(exc: Exception) -> RetryError:
+    """Build a RetryError as tenacity would after exhausting retries on exc."""
+    future = Future(3)
+    try:
+        raise exc
+    except type(exc) as caught:
+        future.set_exception(caught)
+    return RetryError(future)
+
+
+def test_describe_error_unwraps_retry_error_with_status_code():
+    class PermissionDeniedError(Exception):
+        status_code = 403
+
+    retry_error = _retry_error_wrapping(PermissionDeniedError("no access to model"))
+
+    assert _describe_error(retry_error) == (
+        "PermissionDeniedError (status 403): no access to model"
+    )
+
+
+def test_describe_error_passes_through_plain_exception():
+    assert _describe_error(ValueError("boom")) == "ValueError: boom"
+
+
+def test_analyze_batch_logs_underlying_error_not_just_retry_error(monkeypatch, caplog):
+    class PermissionDeniedError(Exception):
+        status_code = 403
+
+    analyzer = ContentAnalyzer(SimpleNamespace(), PROFILES)
+    items = [_make_item("rss:test:1")]
+
+    async def fake_analyze_item(item):
+        raise _retry_error_wrapping(PermissionDeniedError("no access to model"))
+
+    monkeypatch.setattr(analyzer, "_analyze_item", fake_analyze_item)
+
+    with caplog.at_level("ERROR", logger=analyzer_module.logger.name):
+        asyncio.run(analyzer.analyze_batch(items))
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "PermissionDeniedError (status 403): no access to model" in message
+    assert "RetryError[" not in message
 
 
 def test_analyze_batch_concurrent_processing(monkeypatch):

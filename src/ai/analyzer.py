@@ -6,7 +6,7 @@ from typing import List, Optional
 from pydantic import ValidationError
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,24 @@ from ..processing.content import select_content, split_content
 from ..processing.profiles import ProfileRegistry
 
 DEFAULT_THROTTLE_SEC = 0.0
+
+
+def _describe_error(exc: Exception) -> str:
+    """Unwrap a tenacity RetryError to describe the actual failure.
+
+    RetryError's default str() only shows a repr of the wrapped Future
+    (e.g. "RetryError[<Future ... raised PermissionDeniedError>]"), which
+    hides the underlying exception's message and, for API client errors,
+    its HTTP status code.
+    """
+    if isinstance(exc, RetryError):
+        last_exc = exc.last_attempt.exception()
+        if last_exc is not None:
+            exc = last_exc
+    status_code = getattr(exc, "status_code", None)
+    if status_code is not None:
+        return f"{type(exc).__name__} (status {status_code}): {exc}"
+    return f"{type(exc).__name__}: {exc}"
 
 class ContentAnalyzer:
     """Analyzes content items using AI to determine importance."""
@@ -64,7 +82,9 @@ class ContentAnalyzer:
                 try:
                     await self._analyze_item(item)
                 except Exception as e:
-                    logger.error("Error analyzing item %s: %s", item.id, e)
+                    logger.error(
+                        "Error analyzing item %s: %s", item.id, _describe_error(e)
+                    )
                     if item.processing:
                         item.processing.analysis = ContentAnalysis(
                             score=None,
