@@ -1,5 +1,4 @@
 {
-  "version": "1.0",
   "ai": {
     "provider": "openai",
     "model": "openai-main/gpt-5.4-mini",
@@ -13,13 +12,15 @@
       {
         "type": "user_events",
         "username": "torvalds",
-        "enabled": false
+        "enabled": false,
+        "profile": "tech-news"
       },
       {
         "type": "repo_releases",
         "owner": "astral-sh",
         "repo": "uv",
-        "enabled": false
+        "enabled": false,
+        "profile": "tech-news"
       }
     ],
     "hackernews": {
@@ -32,157 +33,183 @@
         "name": "WIRED AI",
         "url": "https://www.wired.com/feed/tag/ai/latest/rss",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "Cursor News",
         "url": "https://any-feeds.com/api/feeds/custom/cmkoaiogm0000lf04qmtirq2g/rss.xml",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "Claude News",
         "url": "https://any-feeds.com/api/feeds/custom/cmlwl4qxj0000l104m7a093k8/rss.xml",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "OpenAI News",
         "url": "https://openai.com/news/rss.xml",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "Google AI Blog",
         "url": "http://feeds.feedburner.com/blogspot/gJZg",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Microsoft Research",
         "url": "https://www.microsoft.com/en-us/research/feed",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "NVIDIA AI Blog",
         "url": "http://feeds.feedburner.com/nvidiablog",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "BAIR (Berkeley AI Research)",
         "url": "https://bair.berkeley.edu/blog/feed.xml",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "MIT AI News",
         "url": "http://news.mit.edu/rss/topic/artificial-intelligence2",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "AI for Newsroom",
         "url": "https://aifornewsroom.in/api/rss",
         "enabled": true,
-        "category": "ai-news"
+        "category": "ai-news",
+        "profile": "tech-news"
       },
       {
         "name": "AWS Machine Learning Blog",
         "url": "https://aws.amazon.com/blogs/machine-learning/feed",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
         "name": "arXiv cs.LG (Machine Learning)",
         "url": "http://arxiv.org/rss/cs.LG",
         "enabled": false,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Simon Willison",
         "url": "https://simonwillison.net/atom/everything/",
         "enabled": true,
-        "category": "ai-tools"
+        "category": "ai-tools",
+        "profile": "tech-news"
       },
       {
         "name": "Hugging Face Blog",
         "url": "https://huggingface.co/blog/feed.xml",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
         "name": "Lil'Log (Lilian Weng)",
         "url": "https://lilianweng.github.io/index.xml",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Google DeepMind Blog",
         "url": "https://deepmind.google/blog/rss.xml",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Ahead of AI (Sebastian Raschka)",
         "url": "https://magazine.sebastianraschka.com/feed",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Chip Huyen's Blog",
         "url": "https://huyenchip.com/feed",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
-        "name": "Engineering at Meta — AI Research",
+        "name": "Engineering at Meta \u2014 AI Research",
         "url": "https://engineering.fb.com/category/ai-research/feed/",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Eugene Yan",
         "url": "https://eugeneyan.com/rss/",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
         "name": "The Gradient",
         "url": "https://thegradient.pub/rss",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Weights & Biases (Fully Connected)",
         "url": "https://wandb.ai/fully-connected/rss.xml",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
         "name": "arXiv cs.CL (Computation and Language)",
         "url": "https://arxiv.org/rss/cs.CL",
         "enabled": false,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "Cohere Blog",
         "url": "https://cohere.com/blog/rss.xml",
         "enabled": true,
-        "category": "ai-engineering"
+        "category": "ai-engineering",
+        "profile": "tech-news"
       },
       {
         "name": "Mistral AI News",
         "url": "https://any-feeds.com/api/feeds/custom/cmpushfea0023jo04qeewhvns/rss.xml",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       },
       {
         "name": "xAI News",
         "url": "https://any-feeds.com/api/feeds/custom/cmpusextd0000jo04gehn62ju/rss.xml",
         "enabled": true,
-        "category": "ai-research"
+        "category": "ai-research",
+        "profile": "tech-news"
       }
     ],
     "reddit": {
@@ -208,16 +235,18 @@
       "fetch_comments": 5
     }
   },
-  "filtering": {
-    "ai_score_threshold": 7.0,
-    "time_window_hours": 168,
-    "topics": [
-      "AI",
-      "machine learning",
-      "large language models",
-      "ai model releases",
-      "open source ai tools"
-    ]
+  "collection": {
+    "time_window_hours": 168
+  },
+  "processing": {
+    "profiles_dir": "profiles",
+    "default_profile": "tech-news",
+    "profile_settings": {
+      "tech-news": {
+        "threshold": 7.0,
+        "topic_dedup": true
+      }
+    }
   },
   "blog": {
     "generator": {
