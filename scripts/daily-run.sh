@@ -9,12 +9,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 
+retry() {
+    local attempt
+    for attempt in 1 2 3; do
+        if "$@"; then
+            return 0
+        fi
+        if (( attempt < 3 )); then
+            echo "$LOG_PREFIX Command failed (attempt $attempt/3); retrying in 15 seconds..." >&2
+            sleep 15
+        fi
+    done
+    return 1
+}
+
 cd "$PROJECT_DIR"
 
 echo "$LOG_PREFIX Starting Horizon daily run..."
 
-# 1. Pull latest code
-git pull --quiet origin main
+# 1. Update to the latest main without requiring a clean worktree
+retry git fetch --quiet origin main
+git merge --ff-only origin/main
 
 # 2. Install/update dependencies
 uv sync --quiet
@@ -27,19 +42,21 @@ echo "$LOG_PREFIX Deploying to gh-pages..."
 
 # Use a temporary worktree to update gh-pages without switching branches
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+cleanup() {
+    cd "$PROJECT_DIR"
+    git worktree remove --force "$TMPDIR" 2>/dev/null || rm -rf "$TMPDIR"
+}
+trap cleanup EXIT
 
-git fetch origin gh-pages:gh-pages 2>/dev/null || git checkout --orphan gh-pages && git checkout main
+git worktree prune
+retry git fetch --quiet origin gh-pages
 
-git worktree add "$TMPDIR" gh-pages
+git worktree add --detach "$TMPDIR" origin/gh-pages
 cp -r docs/* "$TMPDIR/"
 
 cd "$TMPDIR"
 git add -A
 git commit -m "Daily Summary: $(date '+%Y-%m-%d')" || { echo "$LOG_PREFIX Nothing to commit."; exit 0; }
-git push origin gh-pages
-
-cd "$PROJECT_DIR"
-git worktree remove "$TMPDIR"
+retry git push origin HEAD:gh-pages
 
 echo "$LOG_PREFIX Done."

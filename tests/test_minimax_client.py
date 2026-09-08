@@ -6,10 +6,12 @@ import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from anthropic import AsyncAnthropic
 
-from src.ai.client import OpenAIClient, create_ai_client
-from src.models import AIConfig, AIProvider
+from src.ai.client import AnthropicClient, OpenAIClient, create_ai_client
+from src.models import AIConfig, AIProvider, AI_PROVIDER_DEFAULTS
 
 
 def _make_config(**overrides) -> AIConfig:
@@ -17,6 +19,18 @@ def _make_config(**overrides) -> AIConfig:
         "provider": AIProvider.MINIMAX,
         "model": "MiniMax-M3",
         "api_key_env": "MINIMAX_API_KEY",
+        "temperature": 0.3,
+        "max_tokens": 4096,
+    }
+    defaults.update(overrides)
+    return AIConfig(**defaults)
+
+
+def _make_ollama_config(**overrides) -> AIConfig:
+    defaults = {
+        "provider": AIProvider.OLLAMA,
+        "model": "llama3.1",
+        "api_key_env": "",
         "temperature": 0.3,
         "max_tokens": 4096,
     }
@@ -67,10 +81,10 @@ class TestOpenAIClientInit:
         client = OpenAIClient(_make_config())
         assert str(client.client.base_url).rstrip("/").endswith("api.minimax.io/v1")
 
-    def test_uses_custom_base_url(self, monkeypatch):
+    def test_uses_china_openai_compatible_base_url(self, monkeypatch):
         monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
         client = OpenAIClient(_make_config(base_url="https://api.minimaxi.com/v1"))
-        assert "minimaxi.com" in str(client.client.base_url)
+        assert str(client.client.base_url).rstrip("/") == "https://api.minimaxi.com/v1"
 
     def test_uses_default_base_url_for_ali(self, monkeypatch):
         monkeypatch.setenv("ALI_API_KEY", "test-key")
@@ -79,6 +93,52 @@ class TestOpenAIClientInit:
             api_key_env="ALI_API_KEY",
         ))
         assert "dashscope.aliyuncs.com" in str(client.client.base_url)
+
+    def test_ollama_uses_localhost_default_base_url(self, monkeypatch):
+        monkeypatch.delenv("HORIZON_OLLAMA_BASE_URL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+        client = OpenAIClient(_make_ollama_config())
+
+        assert str(client.client.base_url).rstrip("/") == "http://localhost:11434/v1"
+
+    def test_ollama_accepts_custom_base_url_without_v1(self, monkeypatch):
+        monkeypatch.delenv("HORIZON_OLLAMA_BASE_URL", raising=False)
+
+        client = OpenAIClient(_make_ollama_config(base_url="http://192.168.1.10:11434"))
+
+        assert str(client.client.base_url).rstrip("/") == "http://192.168.1.10:11434/v1"
+
+    def test_ollama_does_not_duplicate_v1_in_custom_base_url(self, monkeypatch):
+        monkeypatch.delenv("HORIZON_OLLAMA_BASE_URL", raising=False)
+
+        client = OpenAIClient(_make_ollama_config(base_url="https://ollama.example/v1/"))
+
+        assert str(client.client.base_url).rstrip("/") == "https://ollama.example/v1"
+
+    def test_ollama_uses_base_url_from_env(self, monkeypatch):
+        monkeypatch.setenv("HORIZON_OLLAMA_BASE_URL", "http://ollama.internal:11434")
+
+        client = OpenAIClient(_make_ollama_config())
+
+        assert str(client.client.base_url).rstrip("/") == "http://ollama.internal:11434/v1"
+
+    def test_ollama_config_base_url_overrides_env(self, monkeypatch):
+        monkeypatch.setenv("HORIZON_OLLAMA_BASE_URL", "http://env-host:11434")
+
+        client = OpenAIClient(_make_ollama_config(base_url="http://config-host:11434"))
+
+        assert str(client.client.base_url).rstrip("/") == "http://config-host:11434/v1"
+
+    def test_ollama_host_env_without_scheme_is_supported(self, monkeypatch):
+        monkeypatch.delenv("HORIZON_OLLAMA_BASE_URL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_HOST", "nas.local:11434")
+
+        client = OpenAIClient(_make_ollama_config())
+
+        assert str(client.client.base_url).rstrip("/") == "http://nas.local:11434/v1"
 
 
 class TestOpenAIClientComplete:
@@ -262,12 +322,65 @@ class TestTemperatureFallback:
 
 
 class TestFactoryFunction:
+    def test_minimax_provider_defaults(self):
+        defaults = AI_PROVIDER_DEFAULTS[AIProvider.MINIMAX]
+        assert defaults["model"] == "MiniMax-M3"
+        assert defaults["base_url"] == "https://api.minimax.io/v1"
+
     def test_creates_openai_client_for_minimax(self, monkeypatch):
         monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
         config = _make_config()
         client = create_ai_client(config)
         assert isinstance(client, OpenAIClient)
         assert client.provider == "minimax"
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.minimax.io/anthropic",
+            "https://api.minimaxi.com/anthropic",
+        ],
+    )
+    def test_anthropic_compatible_base_url_builds_messages_path(
+        self, monkeypatch, base_url
+    ):
+        monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "id": "msg_test",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "MiniMax-M3",
+                    "content": [{"type": "text", "text": "ok"}],
+                    "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                },
+            )
+
+        async def run_request() -> str:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as http_client:
+                sdk_client = AsyncAnthropic(
+                    api_key="test-key",
+                    base_url=base_url,
+                    http_client=http_client,
+                )
+                with patch("src.ai.client.AsyncAnthropic", return_value=sdk_client):
+                    client = create_ai_client(_make_config(base_url=base_url))
+                    assert isinstance(client, AnthropicClient)
+                    return await client.complete(system="test", user="hello")
+
+        assert asyncio.run(run_request()) == "ok"
+        assert [str(request.url) for request in requests] == [
+            f"{base_url}/v1/messages"
+        ]
 
     def test_creates_openai_client_for_deepseek(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
