@@ -10,7 +10,12 @@ from rich.console import Console
 from src.blog.generator.scorer import rank_by_relevance, score_items_for_profile
 from src.blog.models import GatePath, PathDimensionConfig, ScoringDimension
 from src.blog.profiles.profile import BlogPromptProfile
-from src.models import ContentItem
+from src.models import (
+    ClassificationResult,
+    ContentAnalysis,
+    ContentItem,
+    ProcessingResult,
+)
 
 
 # --- shared helpers ---
@@ -22,8 +27,10 @@ def make_content_item(id="test:rss:1", title="Test Article") -> ContentItem:
         source_type="rss",
         title=title,
         url="https://example.com/article",
-        ai_score=7.0,
-        ai_tags=["ml"],
+        processing=ProcessingResult(
+            classification=ClassificationResult(profile="tech-news", method="source_override"),
+            analysis=ContentAnalysis(score=7.0, reason="", summary="", tags=["ml"]),
+        ),
         published_at=datetime.now(timezone.utc),
     )
 

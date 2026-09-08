@@ -6,6 +6,7 @@ from rich.console import Console
 from src.ai.utils import parse_json_response
 from src.models import ContentItem
 from .loader import _clean_title
+from .utils import get_analysis
 from src.blog.models import ScoredItem
 from src.blog.profiles.profile import BlogPromptProfile
 from .prompts import (
@@ -43,11 +44,12 @@ async def rank_by_relevance(
         content_preview = ""
         if item.content:
             content_preview = item.content.split("--- Top Comments ---")[0].strip()[:500]
+        analysis = get_analysis(item)
         item_texts.append(
             f"ID: {item.id}\n"
             f"Title: {item.title}\n"
-            f"Summary: {item.ai_summary or item.title}\n"
-            f"Tags: {', '.join(item.ai_tags) if item.ai_tags else 'none'}\n"
+            f"Summary: {analysis.summary if analysis else item.title}\n"
+            f"Tags: {', '.join(analysis.tags) if analysis and analysis.tags else 'none'}\n"
             f"Content: {content_preview}\n"
         )
 
@@ -97,9 +99,10 @@ async def _score_single_item(
     if item.content:
         # 1500-char preview keeps the scoring prompt within LLM context budget; full text is only used at generation time
         content_preview = item.content.split("--- Top Comments ---")[0].strip()[:1500]
+    analysis = get_analysis(item)
     item_text = (
-        f"ID: {item.id}\nTitle: {item.title}\nSummary: {item.ai_summary or item.title}\n"
-        f"Tags: {', '.join(item.ai_tags or [])}\nContent: {content_preview}"
+        f"ID: {item.id}\nTitle: {item.title}\nSummary: {analysis.summary if analysis else item.title}\n"
+        f"Tags: {', '.join(analysis.tags) if analysis and analysis.tags else ''}\nContent: {content_preview}"
     )
     user_prompt = ITEM_SCORING_USER.format(
         count=1,

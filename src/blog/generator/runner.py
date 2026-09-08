@@ -24,6 +24,7 @@ from src.models import Config, ContentItem
 from src.storage.manager import StorageManager
 from .enricher import enrich_thin_items
 from .loader import _clean_title, load_important_items, resolve_profiles
+from .utils import get_analysis
 from src.blog.models import BlogConfig
 from src.blog.profiles import PROFILES
 from src.blog.profiles.profile import BlogPromptProfile
@@ -150,7 +151,7 @@ async def _prefilter_duplicates(
             {
                 "id": item.id,
                 "title": item.title,
-                "summary": item.ai_summary or "",
+                "summary": (get_analysis(item).summary if get_analysis(item) else ""),
             }
             for item in items
         ]

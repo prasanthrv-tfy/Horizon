@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from rich.console import Console
 
 from src.blog.generator.enricher import THIN_CONTENT_THRESHOLD, enrich_thin_items
-from src.models import ContentItem
+from src.models import (
+    ClassificationResult,
+    ContentAnalysis,
+    ContentItem,
+    ProcessingResult,
+)
 
 
 _QUIET = Console(quiet=True)
@@ -19,7 +24,10 @@ def make_content_item(id="test:rss:1", content=None) -> ContentItem:
         title="Test Article",
         url="https://example.com/article",
         content=content,
-        ai_tags=["ml"],
+        processing=ProcessingResult(
+            classification=ClassificationResult(profile="tech-news", method="source_override"),
+            analysis=ContentAnalysis(reason="", summary="", tags=["ml"]),
+        ),
         published_at=datetime.now(timezone.utc),
     )
 

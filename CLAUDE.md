@@ -69,7 +69,7 @@ Fetch → URL Dedup → AI Score → Threshold Filter → Topic Dedup → Save �
 
 `ContentItem` (Pydantic, `src/models.py`) is the universal unit throughout the pipeline:
 - `id`: `"{source}:{subtype}:{native_id}"` — stable identifier
-- `ai_score / ai_reason / ai_summary / ai_tags`: set by the analyzer
+- `processing.analysis.{score,reason,summary,tags}`: set by the analyzer (`processing.classification.profile` holds the resolved processing profile)
 - `metadata: Dict[str, Any]`: open-ended bag for scraper engagement signals and enricher output
 
 ### AI client abstraction

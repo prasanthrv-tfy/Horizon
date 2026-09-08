@@ -15,6 +15,7 @@ from src.ai.utils import parse_json_response
 from src.models import ContentItem
 from src.blog.models import BlogPost
 from src.blog.profiles.profile import BlogPromptProfile
+from .utils import get_analysis
 
 
 def _sanitize_ddg_query(query: str) -> str:
@@ -154,14 +155,15 @@ class BlogWriter:
         sources_section = await self._generate_sources(sources_raw)
         markdown = markdown.rstrip() + "\n\n" + sources_section
         title = _extract_title(markdown, fallback=item.title)
+        analysis = get_analysis(item)
         return BlogPost(
             item_id=item.id,
             title=title,
             markdown=markdown,
             language=language,
-            score=item.ai_score or 0,
+            score=(analysis.score if analysis and analysis.score is not None else 0),
             url=str(item.url),
-            tags=list(item.ai_tags) if item.ai_tags else [],
+            tags=list(analysis.tags) if analysis and analysis.tags else [],
             published_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -251,14 +253,15 @@ class BlogWriter:
             audience_context_section=audience_context_section,
             platform_context_section=platform_context_section,
         )
+        analysis = get_analysis(item)
         user_prompt = _safe_format(
             self.profile.blog_user,
             language_name=language_name,
             title=item.title,
             url=str(item.url),
-            score=item.ai_score or 0,
-            reason=item.ai_reason or "",
-            tags=", ".join(item.ai_tags) if item.ai_tags else "",
+            score=(analysis.score if analysis and analysis.score is not None else 0),
+            reason=(analysis.reason if analysis else ""),
+            tags=", ".join(analysis.tags) if analysis and analysis.tags else "",
             content=content_text,
             comments_section=comments_section,
             engagement=engagement,
@@ -285,10 +288,11 @@ class BlogWriter:
 
     async def _extract_concepts(self, item: ContentItem, content_text: str) -> List[str]:
         """Generate web search queries using the profile's research prompts."""
+        analysis = get_analysis(item)
         user_prompt = self.profile.research_user.format(
             title=item.title,
-            summary=item.ai_summary or item.title,
-            tags=", ".join(item.ai_tags) if item.ai_tags else "",
+            summary=analysis.summary if analysis else item.title,
+            tags=", ".join(analysis.tags) if analysis and analysis.tags else "",
             content=content_text[:2500],
         )
 

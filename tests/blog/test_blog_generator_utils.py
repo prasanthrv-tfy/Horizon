@@ -14,7 +14,12 @@ from src.blog.generator.scorer import _compute_weighted_sum
 from src.blog.generator.writer import BlogWriter
 from src.blog.models import GatePath, PathDimensionConfig, ScoredItem, ScoringDimension
 from src.blog.profiles.profile import BlogPromptProfile
-from src.models import ContentItem
+from src.models import (
+    ClassificationResult,
+    ContentAnalysis,
+    ContentItem,
+    ProcessingResult,
+)
 
 
 # --- shared helpers ---
@@ -33,8 +38,10 @@ def make_content_item(
         title=title,
         url="https://example.com/article",
         content=content,
-        ai_score=ai_score,
-        ai_tags=ai_tags or [],
+        processing=ProcessingResult(
+            classification=ClassificationResult(profile="tech-news", method="source_override"),
+            analysis=ContentAnalysis(score=ai_score, reason="", summary="", tags=ai_tags or []),
+        ),
         published_at=datetime.now(timezone.utc),
     )
 

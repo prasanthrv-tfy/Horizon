@@ -11,6 +11,7 @@ from rich.console import Console
 
 from src.models import ContentItem
 from .fetcher import ContentFetcher
+from .utils import get_analysis
 
 # RSS scrapers often deliver only a teaser (title + one sentence). 500 chars was chosen
 # empirically as the threshold below which a DuckDuckGo fallback yields better blog fodder.
@@ -39,7 +40,8 @@ async def _enrich_one(
                 f"   [yellow]⚠ fetch failed ({fetch_err.__class__.__name__}), using search for:[/yellow] {item.title}"
             )
 
-        text = fetcher.search_fallback(item.title, item.ai_tags or [])
+        analysis = get_analysis(item)
+        text = fetcher.search_fallback(item.title, analysis.tags if analysis else [])
         if text.strip():
             item.content = text
         else:
